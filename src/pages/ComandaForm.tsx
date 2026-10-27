@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { BuscaCliente, type ClienteResumo } from '../components/BuscaCliente'
 import { Alerta, Botao, Campo, Entrada, EntradaValor, Modal, Opcoes, Selecao, useAvisos } from '../components/ui'
 import { useAuth } from '../lib/auth'
 import { useCadastros } from '../lib/cadastros'
@@ -12,6 +13,7 @@ interface Estado {
   data: string
   numero: string
   codigo_externo: string
+  cliente: ClienteResumo | null
   canal_id: number | null
   modalidade: Modalidade | null
   entregador_id: number | null
@@ -32,6 +34,7 @@ function deComanda(c: Comanda): Estado {
     data: c.data,
     numero: String(c.numero),
     codigo_externo: c.codigo_externo ?? '',
+    cliente: null,
     canal_id: c.canal_id,
     modalidade: c.modalidade,
     entregador_id: c.entregador_id,
@@ -53,6 +56,7 @@ function vazio(data: string, anterior?: Estado): Estado {
     data,
     numero: '',
     codigo_externo: '',
+    cliente: null,
     canal_id: anterior?.canal_id ?? null,
     modalidade: null,
     entregador_id: null,
@@ -94,7 +98,13 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
   useEffect(() => {
     if (!aberto) return
     setErro(null)
-    if (comanda) setF(deComanda(comanda))
+    if (comanda) {
+      setF(deComanda(comanda))
+      if (comanda.cliente_id) {
+        supabase.from('clientes').select('id, nome, telefone, bairro').eq('id', comanda.cliente_id).maybeSingle()
+          .then(({ data }) => data && setF((s) => ({ ...s, cliente: data as ClienteResumo })))
+      }
+    }
     else {
       setF(vazio(dataPadrao))
       buscarNumero(dataPadrao)
@@ -194,6 +204,7 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
       data: f.data,
       numero: Number(f.numero),
       codigo_externo: f.codigo_externo.trim() || null,
+      cliente_id: f.cliente?.id ?? null,
       canal_id: f.canal_id!,
       modalidade: f.modalidade!,
       entregador_id: f.modalidade === 'delivery_proprio' ? f.entregador_id : null,
@@ -271,6 +282,10 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
             <Entrada value={f.codigo_externo} onChange={(e) => set('codigo_externo', e.target.value)} />
           </Campo>
         </div>
+
+        <Campo rotulo="Cliente">
+          <BuscaCliente valor={f.cliente} aoMudar={(c) => set('cliente', c)} />
+        </Campo>
 
         <Campo rotulo="Canal">
           <Opcoes nome="Canal" valor={f.canal_id} aoMudar={escolherCanal}

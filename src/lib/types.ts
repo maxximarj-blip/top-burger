@@ -57,6 +57,7 @@ export interface Comanda {
   data: string
   numero: number
   codigo_externo: string | null
+  cliente_id: number | null
   canal_id: number
   modalidade: Modalidade
   entregador_id: number | null
@@ -84,7 +85,7 @@ export interface Comanda {
 
 export type ComandaInput = Pick<
   Comanda,
-  | 'data' | 'numero' | 'codigo_externo' | 'canal_id' | 'modalidade' | 'entregador_id'
+  | 'data' | 'numero' | 'codigo_externo' | 'cliente_id' | 'canal_id' | 'modalidade' | 'entregador_id'
   | 'valor_comanda' | 'taxa_entrega' | 'desconto' | 'valor_pago' | 'forma_pagamento_id'
   | 'maquina_id' | 'status' | 'observacao' | 'conferido'
 >

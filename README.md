@@ -14,7 +14,11 @@ Sistema web para controle de vendas e fechamento de caixa da hamburgueria — su
 | **Fechamento de caixa** | Fundo de troco, sangria/suprimento/despesa, dinheiro esperado × contado, fechar o dia (trava edições) |
 | **Entregadores** | Acerto por período (entregas × taxas), registrar pagamento direto do caixa |
 | **Recebíveis** | Agenda de quando cada venda na maquininha cai na conta (dias úteis) |
-| **Cadastros** | Canais, formas, máquinas com **taxas versionadas por data**, entregadores |
+| **Produtos** | Cardápio editável como planilha (preço, custo, margem e lucro por item), por categoria |
+| **Insumos** | Matéria-prima e embalagens: custo, estoque, mínimo, fornecedor; alerta de reposição |
+| **Clientes** | Cadastro nominal, WhatsApp, aniversário, histórico de pedidos e total gasto; vínculo na comanda |
+| **Fornecedores** | Contatos, CNPJ, Pix, prazo de pagamento, dias de entrega |
+| **Configurações** | Canais, formas, máquinas com **taxas versionadas por data**, entregadores |
 | **Usuários** | Criar usuário, perfil (admin/gerente/caixa), desativar, redefinir senha |
 | **Auditoria** | Tudo que foi criado/alterado/excluído, por quem, com antes × depois |
 
@@ -25,7 +29,9 @@ Sistema web para controle de vendas e fechamento de caixa da hamburgueria — su
 | Lançar/editar comandas do dia aberto | ✅ | ✅ | ✅ |
 | Conferir, excluir comanda | | ✅ | ✅ |
 | Fechar o caixa | | ✅ | ✅ |
-| Entregadores, recebíveis, cadastros | | ✅ | ✅ |
+| Cadastrar/editar clientes; ver produtos | ✅ | ✅ | ✅ |
+| Produtos, insumos, fornecedores (editar) | | ✅ | ✅ |
+| Entregadores, recebíveis, configurações | | ✅ | ✅ |
 | Usuários, auditoria, reabrir dia fechado | | | ✅ |
 
 As regras ficam **no banco** (Row Level Security + gatilhos), não só na tela — mesmo alguém com a chave pública não consegue burlar.
@@ -39,6 +45,7 @@ As regras ficam **no banco** (Row Level Security + gatilhos), não só na tela �
 2. **SQL Editor** → cole e rode, nesta ordem:
    1. `supabase/migrations/20261027000000_init.sql` (estrutura e regras)
    2. `supabase/seed.sql` (canais, formas, máquinas e taxas, entregadores)
+   3. `supabase/migrations/20261027200000_clientes_fornecedores_produtos.sql` (clientes, fornecedores, insumos, cardápio inicial)
 3. **Authentication → Sign In / Providers → Email**: **desligue "Allow new users to sign up"**.
    Assim só o admin cria contas. (Pode deixar "Confirm email" ligado.)
 
@@ -75,6 +82,9 @@ supabase functions deploy admin-usuarios
 Sem ela, dá para criar usuários pelo painel do Supabase (Authentication → Add user) e ajustar o perfil na tela *Usuários*.
 
 ---
+
+## Atualizações
+Cada arquivo novo em `supabase/migrations/` precisa ser rodado **uma vez** no SQL Editor, em ordem de nome. Depois é só subir o código (push) — o GitHub publica sozinho.
 
 ## Rodar no computador
 ```bash

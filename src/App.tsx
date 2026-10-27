@@ -7,6 +7,8 @@ import { CadastrosProvider } from './lib/cadastros'
 import { configurado } from './lib/supabase'
 import type { Papel } from './lib/types'
 import { Auditoria } from './pages/Auditoria'
+import { Insumos, Produtos } from './pages/Cardapio'
+import { Clientes, Fornecedores } from './pages/Pessoas'
 import { Cadastros } from './pages/Cadastros'
 import { Comandas } from './pages/Comandas'
 import { Entregadores } from './pages/Entregadores'
@@ -50,6 +52,10 @@ export default function App() {
             <Route index element={<Painel />} />
             <Route path="comandas" element={<Comandas />} />
             <Route path="caixa" element={<Fechamento />} />
+            <Route path="produtos" element={<Produtos />} />
+            <Route path="clientes" element={<Clientes />} />
+            <Route path="insumos" element={<Restrito papeis={['admin', 'gerente']}><Insumos /></Restrito>} />
+            <Route path="fornecedores" element={<Restrito papeis={['admin', 'gerente']}><Fornecedores /></Restrito>} />
             <Route path="entregadores" element={<Restrito papeis={['admin', 'gerente']}><Entregadores /></Restrito>} />
             <Route path="recebiveis" element={<Restrito papeis={['admin', 'gerente']}><Recebiveis /></Restrito>} />
             <Route path="cadastros" element={<Restrito papeis={['admin', 'gerente']}><Cadastros /></Restrito>} />

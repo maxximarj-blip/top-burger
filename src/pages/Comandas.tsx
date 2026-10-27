@@ -24,6 +24,7 @@ export function Comandas() {
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [fechado, setFechado] = useState(false)
+  const [clientes, setClientes] = useState<Map<number, string>>(new Map())
 
   const [busca, setBusca] = useState('')
   const [canal, setCanal] = useState(0)
@@ -46,6 +47,13 @@ export function Comandas() {
       )
       setLista(dados)
       setErro(null)
+      const ids = [...new Set(dados.map((c) => c.cliente_id).filter((x): x is number => x != null))]
+      const mapa = new Map<number, string>()
+      for (let i = 0; i < ids.length; i += 200) {
+        const { data } = await supabase.from('clientes').select('id, nome').in('id', ids.slice(i, i + 200))
+        ;(data ?? []).forEach((c) => mapa.set(c.id as number, c.nome as string))
+      }
+      setClientes(mapa)
       if (modo === 'dia') {
         const { data } = await supabase.from('fechamentos').select('fechado').eq('data', dia).maybeSingle()
         setFechado(Boolean(data?.fechado))
@@ -88,12 +96,12 @@ export function Comandas() {
       if (filtro === 'divergentes' && !divergente(c)) return false
       if (filtro === 'nao_conferidas' && c.conferido) return false
       if (t) {
-        const alvo = [c.numero, c.codigo_externo, c.observacao, cad.nomeEntregador(c.entregador_id), brl(c.valor_pago)].join(' ').toLowerCase()
+        const alvo = [c.numero, c.codigo_externo, c.observacao, cad.nomeEntregador(c.entregador_id), brl(c.valor_pago), c.cliente_id ? clientes.get(c.cliente_id) : ''].join(' ').toLowerCase()
         if (!alvo.includes(t)) return false
       }
       return true
     })
-  }, [lista, busca, canal, forma, filtro, divergente, cad])
+  }, [lista, busca, canal, forma, filtro, divergente, cad, clientes])
 
   const totais = useMemo(() => {
     const validas = filtradas.filter((c) => c.status !== 'cancelado')
@@ -126,10 +134,10 @@ export function Comandas() {
 
   const exportar = () => {
     baixarCsv(`comandas_${de}_${ate}.csv`, [
-      ['Data', 'Nº', 'Pedido plataforma', 'Canal', 'Modalidade', 'Entregador', 'Valor comanda', 'Taxa entrega', 'Desconto',
+      ['Data', 'Nº', 'Pedido plataforma', 'Cliente', 'Canal', 'Modalidade', 'Entregador', 'Valor comanda', 'Taxa entrega', 'Desconto',
         'Valor pago', 'Forma', 'Máquina', 'Taxa %', 'Valor taxa', 'Líquido', 'Diferença', 'Prev. recebimento', 'Status', 'Conferido', 'Observação'],
       ...filtradas.map((c) => [
-        dataBR(c.data), c.numero, c.codigo_externo, cad.nomeCanal(c.canal_id), NOME_MODALIDADE[c.modalidade],
+        dataBR(c.data), c.numero, c.codigo_externo, c.cliente_id ? clientes.get(c.cliente_id) : '', cad.nomeCanal(c.canal_id), NOME_MODALIDADE[c.modalidade],
         c.entregador_id ? cad.nomeEntregador(c.entregador_id) : '', Number(c.valor_comanda), Number(c.taxa_entrega),
         Number(c.desconto), Number(c.valor_pago), c.forma_pagamento_id ? cad.nomeForma(c.forma_pagamento_id) : '',
         c.maquina_id ? cad.nomeMaquina(c.maquina_id) : '', Number(c.taxa_pct), Number(c.valor_taxa), Number(c.valor_liquido),
@@ -169,7 +177,7 @@ export function Comandas() {
             <input type="date" className="entrada" value={fim} min={inicio} onChange={(e) => e.target.value && setFim(e.target.value)} />
           </div>
         )}
-        <Entrada className="entrada busca" placeholder="Buscar nº, pedido, entregador, valor…" value={busca} onChange={(e) => setBusca(e.target.value)} />
+        <Entrada className="entrada busca" placeholder="Buscar nº, cliente, pedido, entregador, valor…" value={busca} onChange={(e) => setBusca(e.target.value)} />
         <Selecao value={canal} onChange={(e) => setCanal(Number(e.target.value))}>
           <option value={0}>Todos os canais</option>
           {cad.canais.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
@@ -248,6 +256,7 @@ export function Comandas() {
                     <td className="forte">
                       {c.numero}
                       {c.codigo_externo && <small className="sub">{c.codigo_externo}</small>}
+                      {c.cliente_id && <small className="sub cliente-tag">👤 {clientes.get(c.cliente_id) ?? '…'}</small>}
                     </td>
                     <td>{cad.nomeCanal(c.canal_id)}</td>
                     <td>

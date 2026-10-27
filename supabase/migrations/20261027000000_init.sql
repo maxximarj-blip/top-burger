@@ -277,7 +277,9 @@ begin
   end if;
 
   -- Entrega própria precisa de entregador (exceto carga histórica)
-  if new.modalidade = 'delivery_proprio' and new.entregador_id is null and not v_import then
+  if new.modalidade = 'delivery_proprio' and new.entregador_id is null and not v_import
+     and (tg_op = 'INSERT' or new.modalidade is distinct from old.modalidade
+          or new.entregador_id is distinct from old.entregador_id) then
     raise exception 'Informe o entregador para delivery próprio.';
   end if;
   if new.modalidade <> 'delivery_proprio' then

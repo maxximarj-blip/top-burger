@@ -11,7 +11,7 @@ export function Cadastros() {
   const [aba, setAba] = useState<Aba>('maquinas')
   return (
     <div className="pagina">
-      <Cabecalho titulo="Cadastros" subtitulo="Listas usadas no lançamento das comandas" />
+      <Cabecalho titulo="Configurações" subtitulo="Máquinas e taxas, entregadores, canais e formas de pagamento" />
       <div className="abas">
         {([['maquinas', 'Máquinas e taxas'], ['entregadores', 'Entregadores'], ['canais', 'Canais'], ['formas', 'Formas de pagamento']] as [Aba, string][]).map(([v, r]) => (
           <button key={v} className={aba === v ? 'ativo' : ''} onClick={() => setAba(v)}>{r}</button>

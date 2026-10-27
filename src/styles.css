@@ -308,3 +308,38 @@ select.entrada { width: auto; padding-right: 28px; }
   .kpis .kpi-destaque { grid-column: span 2; }
   .tabela th, .tabela td { padding: 8px; }
 }
+
+/* ---------- Cadastros genéricos ---------- */
+.nav-secao { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: #8a7a6b; padding: 14px 10px 4px; font-weight: 600; }
+.tenue { color: var(--texto-2); }
+.tabela-clicavel tbody tr { cursor: pointer; }
+.tabela-clicavel tbody tr:hover td { background: var(--marca-suave); }
+.tabela tr.inativa td { opacity: 0.55; }
+.tabela tr.linha-alerta td { background: color-mix(in srgb, var(--marca-suave) 70%, transparent); }
+.tabela tr.linha-erro td { background: var(--ketchup-suave); }
+.tabela-planilha td { padding: 4px 6px; vertical-align: middle; }
+.tabela-planilha .entrada { min-height: 32px; padding: 5px 8px; border-color: transparent; background: transparent; }
+.tabela-planilha .entrada:hover { border-color: var(--linha); background: var(--superficie); }
+.tabela-planilha .entrada:focus { background: var(--superficie); }
+.tabela-planilha .entrada-valor .entrada { padding-left: 28px; }
+.tabela-planilha select.entrada { width: 100%; }
+.tabela-planilha tr.linha-suja td { box-shadow: inset 3px 0 0 var(--marca); }
+.tabela-planilha tr.linha-suja td + td { box-shadow: none; }
+.entrada.n { text-align: right; }
+.check-inline { width: 18px; height: 18px; accent-color: var(--marca); display: block; margin: 0 auto; }
+.grade-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.grade-form .inteiro { grid-column: 1 / -1; }
+.valor-leitura { padding: 8px 0; }
+@media (max-width: 760px) { .grade-form { grid-template-columns: 1fr; } }
+
+/* ---------- Cliente na comanda ---------- */
+.busca-cliente { position: relative; }
+.busca-lista { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 10; background: var(--superficie); border: 1px solid var(--linha); border-radius: 10px; box-shadow: 0 10px 30px rgb(0 0 0 / 15%); overflow: hidden; }
+.busca-lista button { display: flex; justify-content: space-between; gap: 12px; width: 100%; text-align: left; font: inherit; background: none; border: 0; border-bottom: 1px solid var(--linha); padding: 9px 12px; cursor: pointer; color: var(--texto); }
+.busca-lista button:hover { background: var(--marca-suave); }
+.busca-lista small { color: var(--texto-2); }
+.busca-lista .busca-novo { color: var(--marca-forte); font-weight: 600; border-bottom: 0; }
+.cliente-rapido { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.cliente-rapido .entrada { flex: 1; min-width: 160px; }
+.cliente-escolhido { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border: 1px solid var(--linha); border-radius: 8px; background: var(--superficie-2); }
+.cliente-tag { color: var(--azul) !important; }

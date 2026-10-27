@@ -10,7 +10,7 @@ export function Botao({
   variante = 'secundario', carregando, children, className = '', ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & { variante?: Variante; carregando?: boolean }) {
   return (
-    <button className={`btn btn-${variante} ${className}`} disabled={carregando || props.disabled} {...props}>
+    <button type="button" className={`btn btn-${variante} ${className}`} disabled={carregando || props.disabled} {...props}>
       {carregando && <span className="spinner" aria-hidden />}
       {children}
     </button>
@@ -150,17 +150,21 @@ export function Modal({ aberto, aoFechar, titulo, children, rodape, largo, gavet
   rodape?: ReactNode; largo?: boolean; gaveta?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  const fechar = useRef(aoFechar)
+  fechar.current = aoFechar
+  // só reage à abertura/fechamento (não a cada render), para não roubar o foco enquanto se digita
   useEffect(() => {
     if (!aberto) return
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && aoFechar()
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && fechar.current()
     document.addEventListener('keydown', esc)
     document.body.style.overflow = 'hidden'
-    setTimeout(() => ref.current?.querySelector<HTMLElement>('input, select, textarea')?.focus(), 30)
+    const t = setTimeout(() => ref.current?.querySelector<HTMLElement>('input:not([type=checkbox]), select, textarea')?.focus(), 30)
     return () => {
+      clearTimeout(t)
       document.removeEventListener('keydown', esc)
       document.body.style.overflow = ''
     }
-  }, [aberto, aoFechar])
+  }, [aberto])
   if (!aberto) return null
   return (
     <div className={`modal-fundo ${gaveta ? 'modal-gaveta' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && aoFechar()}>
