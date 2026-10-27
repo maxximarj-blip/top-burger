@@ -1,0 +1,103 @@
+# 🍔 Top Burguer · Sistema de Gestão
+
+Sistema web para controle de vendas e fechamento de caixa da hamburgueria — substitui a planilha *Top Burguers.xlsx*.
+
+**Stack:** React + TypeScript (Vite) no **GitHub Pages** · **Supabase** (Postgres, login, permissões) · deploy automático pelo GitHub Actions.
+
+## O que tem
+
+| Módulo | O que faz |
+|---|---|
+| **Login** | E-mail e senha, recuperação de senha por e-mail, troca de senha em *Minha conta* |
+| **Painel** | Faturamento, líquido, ticket médio, descontos, comissão das plataformas, vendas por dia, canal, forma, canal × forma, maquininhas, dia da semana, modalidade |
+| **Comandas** | Lançamento rápido (atalho **N**), valor pago calculado, taxa da máquina automática, filtros, divergências, pendentes, conferência em lote, exportar CSV |
+| **Fechamento de caixa** | Fundo de troco, sangria/suprimento/despesa, dinheiro esperado × contado, fechar o dia (trava edições) |
+| **Entregadores** | Acerto por período (entregas × taxas), registrar pagamento direto do caixa |
+| **Recebíveis** | Agenda de quando cada venda na maquininha cai na conta (dias úteis) |
+| **Cadastros** | Canais, formas, máquinas com **taxas versionadas por data**, entregadores |
+| **Usuários** | Criar usuário, perfil (admin/gerente/caixa), desativar, redefinir senha |
+| **Auditoria** | Tudo que foi criado/alterado/excluído, por quem, com antes × depois |
+
+### Perfis
+
+| | Caixa | Gerente | Admin |
+|---|:-:|:-:|:-:|
+| Lançar/editar comandas do dia aberto | ✅ | ✅ | ✅ |
+| Conferir, excluir comanda | | ✅ | ✅ |
+| Fechar o caixa | | ✅ | ✅ |
+| Entregadores, recebíveis, cadastros | | ✅ | ✅ |
+| Usuários, auditoria, reabrir dia fechado | | | ✅ |
+
+As regras ficam **no banco** (Row Level Security + gatilhos), não só na tela — mesmo alguém com a chave pública não consegue burlar.
+
+---
+
+## Instalação (≈ 20 min, uma vez só)
+
+### 1. Supabase
+1. Crie uma conta em [supabase.com](https://supabase.com) → **New project** (região *South America (São Paulo)*).
+2. **SQL Editor** → cole e rode, nesta ordem:
+   1. `supabase/migrations/20261027000000_init.sql` (estrutura e regras)
+   2. `supabase/seed.sql` (canais, formas, máquinas e taxas, entregadores)
+3. **Authentication → Sign In / Providers → Email**: **desligue "Allow new users to sign up"**.
+   Assim só o admin cria contas. (Pode deixar "Confirm email" ligado.)
+
+### 2. Primeiro usuário (vira admin automaticamente)
+**Authentication → Users → Add user → Create new user**, com seu e-mail e senha, marcando *Auto Confirm User*.
+O **primeiro** usuário do sistema recebe o perfil **admin**; os próximos você cria pela tela *Usuários*.
+
+### 3. Importar o histórico da planilha (opcional)
+```bash
+pip install openpyxl
+python scripts/importar_planilha.py "Top Burguers.xlsx" dados/importacao.sql
+```
+Cole o conteúdo de `dados/importacao.sql` no SQL Editor e rode. O script imprime um relatório do que corrigiu (datas com ano errado, "dinheiro"/"Oline", canal digitado como número, números de comanda repetidos) e do que virou **Pendente** para revisar.
+> ⚠️ `dados/` está no `.gitignore`: **não suba dados de venda para o GitHub.**
+
+### 4. GitHub Pages
+1. Crie o repositório e suba este código (`git push` na branch `main`).
+2. **Settings → Secrets and variables → Actions → New repository secret**:
+   - `VITE_SUPABASE_URL` → *Project Settings → API → Project URL*
+   - `VITE_SUPABASE_ANON_KEY` → *Project Settings → API Keys → anon / publishable* (**nunca** a `service_role`)
+3. **Settings → Pages → Source: GitHub Actions**.
+4. Cada push na `main` publica em `https://<seu-usuario>.github.io/<repositorio>/`.
+5. No Supabase, **Authentication → URL Configuration**: em *Site URL* e *Redirect URLs* coloque essa URL (é para onde o link de "esqueci a senha" volta).
+
+> GitHub Pages grátis exige repositório **público**. Tudo bem: o código não tem segredo — a chave *anon* é pública por design e quem protege os dados é o RLS. Se preferir repositório privado, use Vercel ou Netlify (mesmo build: `npm run build`, pasta `dist`, mesmas variáveis).
+
+### 5. Função de usuários (para criar usuários pela tela)
+```bash
+npm i -g supabase
+supabase login
+supabase link --project-ref <ref-do-projeto>
+supabase functions deploy admin-usuarios
+```
+Sem ela, dá para criar usuários pelo painel do Supabase (Authentication → Add user) e ajustar o perfil na tela *Usuários*.
+
+---
+
+## Rodar no computador
+```bash
+cp .env.example .env.local   # preencha URL e chave anon
+npm install
+npm run dev
+```
+
+## Regras de negócio importantes
+- **Líquido = valor pago − taxa da maquininha.** O desconto já está dentro do valor pago, então não é subtraído de novo (a planilha antiga descontava duas vezes).
+- **Diferença** = comanda + entrega − desconto − pago. Em 99/iFood é a comissão da plataforma; no canal próprio, qualquer diferença aparece como **divergência** para conferência.
+- **"Pix na máquina"** = forma *Pix* + máquina informada. Pix na chave da loja = *Pix* sem máquina.
+- **Taxa nova da maquininha?** Cadastre uma nova taxa com a data de início — vendas antigas mantêm a taxa da época.
+- **Dia fechado** trava comandas e movimentos. Só admin reabre, com motivo registrado.
+- Status **Pendente** bloqueia o fechamento do dia.
+
+## Estrutura
+```
+supabase/migrations/   banco: tabelas, regras, RLS, auditoria, relatórios
+supabase/seed.sql      cadastros iniciais
+supabase/functions/    função admin-usuarios (criar usuário / trocar senha)
+scripts/               importação da planilha
+src/pages/             telas
+src/lib/               conexão, login, cadastros, formatação
+.github/workflows/     deploy no GitHub Pages
+```

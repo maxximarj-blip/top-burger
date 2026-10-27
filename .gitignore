@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.local
+.env.*.local
+# dados de vendas NUNCA vão para o GitHub
+dados/
+*.xlsx
+.DS_Store
+supabase/.temp
