@@ -18,19 +18,36 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build
+
+      - name: Localizar o projeto
+        run: |
+          if [ -f package.json ]; then DIR=.; else
+            ARQ=$(find . -name package.json -not -path "*/node_modules/*" | head -1)
+            if [ -z "$ARQ" ]; then echo "::error::package.json não encontrado no repositório"; exit 1; fi
+            DIR=$(dirname "$ARQ")
+          fi
+          echo "DIR=$DIR" >> "$GITHUB_ENV"
+          echo "Projeto em: $DIR"
+
+      - name: Instalar dependências
+        working-directory: ${{ env.DIR }}
+        run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
+
+      - name: Gerar o site
+        working-directory: ${{ env.DIR }}
+        run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-      - uses: actions/upload-pages-artifact@v3
+
+      - uses: actions/upload-pages-artifact@v4
         with:
-          path: dist
+          path: ${{ env.DIR }}/dist
 
   deploy:
     needs: build
