@@ -34,6 +34,13 @@ jobs:
           echo "DIR=$DIR" >> "$GITHUB_ENV"
           echo "Projeto em: $DIR"
 
+      - name: Conferir as chaves do Supabase
+        run: |
+          if [ -z "${{ secrets.VITE_SUPABASE_URL }}" ] || [ -z "${{ secrets.VITE_SUPABASE_ANON_KEY }}" ]; then
+            echo "::error::Faltam os secrets VITE_SUPABASE_URL e/ou VITE_SUPABASE_ANON_KEY (Settings > Secrets and variables > Actions)"
+            exit 1
+          fi
+
       - name: Instalar dependências
         working-directory: ${{ env.DIR }}
         run: if [ -f package-lock.json ]; then npm ci; else npm install; fi
