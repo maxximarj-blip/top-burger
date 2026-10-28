@@ -7,9 +7,10 @@ import type { Auditoria as Registro } from '../lib/types'
 const TABELAS: Record<string, string> = {
   comandas: 'Comandas', movimentos_caixa: 'Movimentos de caixa', fechamentos: 'Fechamentos', perfis: 'Usuários',
   canais: 'Canais', formas_pagamento: 'Formas de pagamento', maquinas: 'Máquinas', maquina_taxas: 'Taxas', entregadores: 'Entregadores',
+  produtos: 'Produtos', insumos: 'Insumos', clientes: 'Clientes', fornecedores: 'Fornecedores',
 }
 const ACOES = { INSERT: ['Criou', 'ok'], UPDATE: ['Alterou', 'info'], DELETE: ['Excluiu', 'erro'] } as const
-const IGNORAR = new Set(['atualizado_em', 'atualizado_por', 'criado_em'])
+const IGNORAR = new Set(['atualizado_em', 'atualizado_por', 'criado_em', 'resumo', 'conferido_em', 'conferido_por', 'fechado_por'])
 const POR_PAGINA = 100
 
 function descrever(r: Registro) {
