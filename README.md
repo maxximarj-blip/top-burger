@@ -88,12 +88,15 @@ Sem ela, dá para criar usuários pelo painel do Supabase (Authentication → Ad
 
 ---
 
-### 6. Leitura de notas por foto/PDF (opcional)
-O **XML funciona sem configurar nada**. Para ler **foto ou PDF** da nota:
-1. Crie uma conta em [platform.claude.com](https://platform.claude.com), adicione créditos e gere uma **API key**.
-2. Supabase → **Edge Functions → Secrets** → `ANTHROPIC_API_KEY` = a chave. (Opcional: `CLAUDE_MODEL`, padrão `claude-sonnet-5-5`.)
+### 6. Leitura de notas por foto/PDF (opcional, gratuito)
+O **XML funciona sem configurar nada**. Para ler **foto ou PDF** da nota, o sistema usa o **Google Gemini**:
+1. Entre em [aistudio.google.com/apikey](https://aistudio.google.com/apikey) com uma conta Google e clique em **Create API key**. Não precisa de cartão.
+2. Supabase → **Edge Functions → Secrets** → adicione `GEMINI_API_KEY` = a chave.
 3. **Edge Functions → Deploy a new function → Via Editor**, nome `ler-nota`, cole `supabase/functions/ler-nota/index.ts` e publique.
-Cada leitura é cobrada pela API (custo baixo por nota). A chave fica só no Supabase, nunca no site.
+
+Opcional nos Secrets: `GEMINI_MODEL` (padrão `gemini-3.8-flash`) e `GEMINI_MODEL_RESERVA` (padrão `gemini-3.5-flash-lite`). Quando o limite gratuito do principal acaba, a função usa a reserva sozinha.
+
+> **Nível gratuito:** tem limite de leituras por minuto e por dia (o Google mostra o seu no AI Studio). E, no gratuito, o Google pode usar as imagens enviadas para melhorar os produtos dele e pessoas podem revisá-las. Para notas de compra de fornecedores isso costuma ser aceitável; se preferir privacidade total, ative o faturamento no AI Studio (nível pago, custo baixo) — nada muda no sistema.
 
 ## Atualizações
 Cada arquivo novo em `supabase/migrations/` precisa ser rodado **uma vez** no SQL Editor, em ordem de nome. Depois é só subir o código (push) — o GitHub publica sozinho.
