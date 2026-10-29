@@ -19,6 +19,7 @@ Sistema web para controle de vendas e fechamento de caixa da hamburgueria — su
 | **Clientes** | Cadastro nominal, WhatsApp, aniversário, histórico de pedidos e total gasto; vínculo na comanda |
 | **Fornecedores** | Contatos, CNPJ, Pix, prazo de pagamento, dias de entrega |
 | **Compras** | Lançamento com itens (insumos entram no estoque e atualizam o custo), contas a pagar com vencimentos, relatório do mês para imprimir/PDF e CSV |
+| **Importar nota** | Lê o **XML** da NF-e/NFC-e (grátis, exato) ou a **foto/PDF** da nota (IA), reconhece o fornecedor pelo CNPJ, liga os itens aos insumos com conversão de unidade (CX 12 → 12 un) e **aprende** para as próximas notas |
 | **Configurações** | Canais, formas, máquinas com **taxas versionadas por data**, entregadores |
 | **Usuários** | Criar usuário, perfil (admin/gerente/caixa), desativar, redefinir senha |
 | **Auditoria** | Tudo que foi criado/alterado/excluído, por quem, com antes × depois |
@@ -49,6 +50,7 @@ As regras ficam **no banco** (Row Level Security + gatilhos), não só na tela �
    2. `supabase/seed.sql` (canais, formas, máquinas e taxas, entregadores)
    3. `supabase/migrations/20261027200000_clientes_fornecedores_produtos.sql` (clientes, fornecedores, insumos, cardápio inicial)
    4. `supabase/migrations/20261029000000_compras.sql` (compras, contas a pagar, relatório)
+   5. `supabase/migrations/20261029200000_leitor_notas.sql` (leitor de notas: chave da NF-e e memória de itens)
 3. **Authentication → Sign In / Providers → Email**: **desligue "Allow new users to sign up"**.
    Assim só o admin cria contas. (Pode deixar "Confirm email" ligado.)
 
@@ -86,6 +88,13 @@ Sem ela, dá para criar usuários pelo painel do Supabase (Authentication → Ad
 
 ---
 
+### 6. Leitura de notas por foto/PDF (opcional)
+O **XML funciona sem configurar nada**. Para ler **foto ou PDF** da nota:
+1. Crie uma conta em [platform.claude.com](https://platform.claude.com), adicione créditos e gere uma **API key**.
+2. Supabase → **Edge Functions → Secrets** → `ANTHROPIC_API_KEY` = a chave. (Opcional: `CLAUDE_MODEL`, padrão `claude-sonnet-5-5`.)
+3. **Edge Functions → Deploy a new function → Via Editor**, nome `ler-nota`, cole `supabase/functions/ler-nota/index.ts` e publique.
+Cada leitura é cobrada pela API (custo baixo por nota). A chave fica só no Supabase, nunca no site.
+
 ## Atualizações
 Cada arquivo novo em `supabase/migrations/` precisa ser rodado **uma vez** no SQL Editor, em ordem de nome. Depois é só subir o código (push) — o GitHub publica sozinho.
 
@@ -103,6 +112,7 @@ npm run dev
 - **Taxa nova da maquininha?** Cadastre uma nova taxa com a data de início — vendas antigas mantêm a taxa da época.
 - **Dia fechado** trava comandas e movimentos. Só admin reabre, com motivo registrado.
 - Status **Pendente** bloqueia o fechamento do dia.
+- **Importar nota:** a mesma nota (chave de acesso) não entra duas vezes. A escolha "item da nota → insumo" e o fator de conversão ficam salvos por fornecedor e são aplicados sozinhos nas próximas notas. Nota com várias parcelas entra com o 1º vencimento; as parcelas vão para a observação.
 - **Compras:** item ligado a insumo soma no estoque e o custo do insumo passa a ser o da compra mais recente. Cancelar ou excluir a compra estorna o estoque. Compra paga com dinheiro da gaveta pode gerar a despesa no caixa automaticamente (e ela some se a compra for cancelada).
 
 ## Estrutura

@@ -6,6 +6,7 @@ import { baixarCsv, brl, brlUnit, dataBR, dataHoraBR, fimMes, hoje, inicioMes, m
 import { buscarTudo, mensagemErro, supabase } from '../lib/supabase'
 import type { Compra, CompraItem, Fornecedor, Insumo, RelatorioCompras } from '../lib/types'
 import { CompraForm, FORMAS_COMPRA } from './CompraForm'
+import { ImportarNota } from './ImportarNota'
 
 type Aba = 'lancamentos' | 'pagar' | 'relatorio'
 const CORES = ['#e0912a', '#c8402a', '#5b7f3a', '#3f6e8c', '#8a5a9e', '#9c6b3c', '#4f8f86', '#b5874a', '#6d6d6d']
@@ -15,7 +16,7 @@ function useBase() {
   const [insumos, setInsumos] = useState<Insumo[]>([])
   const recarregar = useCallback(async () => {
     const [f, i] = await Promise.all([
-      supabase.from('fornecedores').select('id, nome, categoria, prazo_pagamento_dias, ativo').order('nome'),
+      supabase.from('fornecedores').select('id, nome, razao_social, documento, categoria, prazo_pagamento_dias, ativo').order('nome'),
       supabase.from('insumos').select('*').order('nome'),
     ])
     setFornecedores((f.data as Fornecedor[]) ?? [])
@@ -54,6 +55,7 @@ export function Compras() {
   const base = useBase()
   const [mes, setMes] = useState(inicioMes(hoje()))
   const [form, setForm] = useState<{ compra: Compra | null; itens: CompraItem[] } | null>(null)
+  const [importar, setImportar] = useState(false)
   const [versao, setVersao] = useState(0)
   const [aPagar, setAPagar] = useState<Compra[]>([])
 
@@ -76,7 +78,12 @@ export function Compras() {
       <Cabecalho
         titulo="Compras"
         subtitulo="Tudo que entra na casa: mercadoria, embalagem, serviço. Itens de insumo atualizam estoque e custo."
-        acoes={<Botao variante="primario" onClick={() => abrir(null)} className="nao-imprimir">+ Nova compra</Botao>}
+        acoes={
+          <>
+            <Botao onClick={() => setImportar(true)} className="nao-imprimir">📄 Importar nota (XML / foto)</Botao>
+            <Botao variante="primario" onClick={() => abrir(null)} className="nao-imprimir">+ Nova compra</Botao>
+          </>
+        }
       />
 
       <div className="abas nao-imprimir">
@@ -90,6 +97,14 @@ export function Compras() {
       {aba === 'lancamentos' && <Lancamentos mes={mes} setMes={setMes} fornecedores={base.fornecedores} abrir={abrir} versao={versao} />}
       {aba === 'pagar' && <ContasAPagar lista={aPagar} fornecedores={base.fornecedores} abrir={abrir} aoMudar={() => setVersao((v) => v + 1)} />}
       {aba === 'relatorio' && <Relatorio mes={mes} setMes={setMes} fornecedores={base.fornecedores} versao={versao} />}
+
+      <ImportarNota
+        aberto={importar}
+        aoFechar={() => setImportar(false)}
+        aoSalvar={() => { setVersao((v) => v + 1); base.recarregar() }}
+        fornecedores={base.fornecedores}
+        insumos={base.insumos}
+      />
 
       <CompraForm
         aberto={!!form}
@@ -218,7 +233,7 @@ function Lancamentos({ mes, setMes, fornecedores, abrir, versao }: {
                         {its.slice(0, 2).map((i) => `${qtd(i.quantidade)} ${i.unidade} ${i.descricao}`).join(' · ')}
                         {its.length > 2 && <small className="sub">+ {its.length - 2} {its.length - 2 === 1 ? 'item' : 'itens'}</small>}
                       </td>
-                      <td>{c.numero_nota || <span className="tenue">—</span>}</td>
+                      <td>{c.numero_nota || <span className="tenue">—</span>}{c.origem !== 'manual' && <small className="sub"><Selo tom="info">{c.origem === 'xml' ? 'XML' : 'foto'}</Selo></small>}</td>
                       <td>{c.forma_pagamento || <span className="tenue">—</span>}</td>
                       <td><SeloStatus c={c} /></td>
                       <td className="n forte">{brl(c.total)}</td>

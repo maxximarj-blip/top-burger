@@ -209,6 +209,8 @@ export interface Compra {
   total: number
   observacao: string | null
   criado_em: string
+  chave_nfe: string | null
+  origem: 'manual' | 'xml' | 'foto'
 }
 
 export interface CompraItem {
@@ -221,6 +223,10 @@ export interface CompraItem {
   quantidade: number
   valor_unitario: number
   valor_total: number
+  codigo_nota: string | null
+  descricao_nota: string | null
+  quantidade_nota: number | null
+  unidade_nota: string | null
 }
 
 export interface Insumo {
@@ -238,6 +244,8 @@ export interface Insumo {
 export interface Fornecedor {
   id: number
   nome: string
+  razao_social?: string | null
+  documento?: string | null
   categoria: string | null
   prazo_pagamento_dias: number | null
   ativo: boolean
@@ -256,4 +264,14 @@ export interface RelatorioCompras {
   }[]
   por_dia: { data: string; total: number; compras: number }[]
   por_forma: { forma: string; total: number; compras: number }[]
+}
+
+export interface NotaMapeamento {
+  id: number
+  fornecedor_id: number
+  chave: string
+  insumo_id: number | null
+  categoria: string | null
+  fator: number
+  usos: number
 }

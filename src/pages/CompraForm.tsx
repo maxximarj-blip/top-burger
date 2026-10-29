@@ -18,6 +18,7 @@ interface LinhaItem {
   valor_unitario: string
   modoTotal: boolean // digitando o total da linha em vez do preço unitário
   total: string
+  nota?: Pick<CompraItem, 'codigo_nota' | 'descricao_nota' | 'quantidade_nota' | 'unidade_nota'> // como veio na nota fiscal
 }
 
 const novaLinha = (): LinhaItem => ({
@@ -94,6 +95,7 @@ export function CompraForm({ aberto, compra, itensIniciais, fornecedores, insumo
               chave: i.id, insumo_id: i.insumo_id, avulso: i.insumo_id == null, descricao: i.descricao,
               categoria: i.categoria, unidade: i.unidade, quantidade: String(Number(i.quantidade)).replace('.', ','),
               valor_unitario: num4(Number(i.valor_unitario)), modoTotal: false, total: '',
+              nota: i.descricao_nota ? { codigo_nota: i.codigo_nota, descricao_nota: i.descricao_nota, quantidade_nota: i.quantidade_nota, unidade_nota: i.unidade_nota } : undefined,
             }))
           : [novaLinha()],
       )
@@ -203,6 +205,7 @@ export function CompraForm({ aberto, compra, itensIniciais, fornecedores, insumo
         unidade: l.unidade,
         quantidade: lerValor(l.quantidade),
         valor_unitario: unitarioDe(l),
+        ...(l.nota ?? {}),
       })),
       p_lancar_caixa: !compra && status === 'paga' && forma === 'Dinheiro' && lancarCaixa,
     })
@@ -322,6 +325,7 @@ export function CompraForm({ aberto, compra, itensIniciais, fornecedores, insumo
                       ))}
                       <option value="avulso">+ Outro item (não é insumo)</option>
                     </Selecao>
+                    {l.nota?.descricao_nota && <small className="sub">na nota: {l.nota.descricao_nota}{l.nota.quantidade_nota ? ` · ${Number(l.nota.quantidade_nota)} ${l.nota.unidade_nota ?? ''}` : ''}</small>}
                     {l.avulso && (
                       <div className="item-avulso">
                         <Entrada placeholder="Descrição (ex.: conserto da chapa)" value={l.descricao} onChange={(e) => alterar(l.chave, { descricao: e.target.value })} aria-label="Descrição" />

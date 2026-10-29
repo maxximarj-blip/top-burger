@@ -423,3 +423,56 @@ select.entrada { width: auto; padding-right: 28px; }
   .tabela-itens { min-width: 600px; }
   .itens-topo .campo-dica { display: none; }
 }
+
+/* ---------- Importar nota ---------- */
+.importar { display: flex; flex-direction: column; gap: 12px; }
+.zona-arquivos { border: 2px dashed #d9c9b4; border-radius: 12px; padding: 28px 16px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; background: var(--superficie-2); transition: background 0.15s, border-color 0.15s; }
+.zona-arquivos span { color: var(--texto-2); max-width: 460px; }
+.zona-arquivos.arrastando { border-color: var(--marca); background: var(--marca-suave); }
+.zona-arquivos.compacta { padding: 10px; flex-direction: row; justify-content: flex-end; border-style: solid; border-width: 1px; }
+.zona-botoes { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+.fila-notas { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; }
+.fila-item { display: flex; align-items: center; gap: 8px; min-width: 190px; max-width: 240px; text-align: left; font: inherit; padding: 8px 10px; border: 1px solid var(--linha); border-radius: 10px; background: var(--superficie); color: var(--texto); cursor: default; }
+.fila-item.estado-pronta { cursor: pointer; }
+.fila-item.ativo { border-color: var(--marca); box-shadow: 0 0 0 2px var(--marca-suave); }
+.fila-item.estado-lancada { background: var(--alface-suave); }
+.fila-item.estado-erro { background: var(--ketchup-suave); }
+.fila-item.estado-pulada { opacity: 0.55; }
+.fila-icone { flex: none; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; font-size: 11px; font-weight: 800; background: var(--superficie-2); border: 1px solid var(--linha); }
+.estado-lancada .fila-icone { background: var(--alface); color: #fff; border: 0; font-size: 16px; }
+.estado-erro .fila-icone { background: var(--ketchup); color: #fff; border: 0; }
+.fila-texto { min-width: 0; display: flex; flex-direction: column; }
+.fila-texto strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.fila-texto small { color: var(--texto-2); font-size: 12px; }
+.conferencia { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--linha); padding-top: 12px; }
+.conf-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.conf-topo h3 { margin: 0; font-size: 18px; }
+.conf-total { text-align: right; display: flex; flex-direction: column; }
+.conf-total span { font-size: 12px; color: var(--texto-2); }
+.conf-total strong { font-family: var(--fonte-titulo); font-size: 22px; }
+.conf-com-previa { display: grid; grid-template-columns: 130px 1fr; gap: 14px; align-items: start; }
+.conf-campos { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.previa-nota { display: flex; flex-direction: column; gap: 4px; text-decoration: none; color: var(--texto-2); font-size: 11px; text-align: center; }
+.previa-nota img { width: 100%; max-height: 190px; object-fit: cover; object-position: top; border-radius: 8px; border: 1px solid var(--linha); }
+.chave-nfe { font-family: ui-monospace, monospace; font-size: 11.5px; padding: 8px 0; color: var(--texto-2); word-break: break-all; line-height: 1.4; }
+.largura-total { width: 100%; }
+.tabela-conferencia td { vertical-align: top; }
+.tabela-conferencia tr.excluida td { opacity: 0.45; }
+.tabela-conferencia tr.excluida td:first-child { opacity: 1; }
+.item-nota strong { display: block; font-size: 13px; }
+.item-nota small { color: var(--texto-2); font-size: 12px; }
+.tabela-conferencia .selo { margin-top: 4px; }
+.entrada.pendente { border-color: var(--ketchup); background: var(--ketchup-suave); }
+.mt-6 { margin-top: 6px; }
+.conversao { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--texto-2); white-space: nowrap; }
+.conversao .entrada { width: 64px; min-height: 32px; padding: 4px 6px; }
+.conversao.incerta .entrada { border-color: var(--marca); background: var(--marca-suave); }
+.destaque-conv { color: var(--azul); }
+.conf-acoes { display: flex; justify-content: flex-end; gap: 8px; position: sticky; bottom: -18px; background: var(--superficie); padding: 10px 0; border-top: 1px solid var(--linha); }
+@media (max-width: 760px) {
+  .conf-com-previa { grid-template-columns: 1fr; }
+  .previa-nota img { max-height: 140px; }
+  .tabela-conferencia { min-width: 720px; }
+}
+.tabela-conferencia th:first-child, .tabela-conferencia td:first-child { min-width: 0; width: 28px; }
+.tabela-conferencia td.item-nota { min-width: 230px; }
