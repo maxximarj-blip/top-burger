@@ -110,9 +110,43 @@ function deCampo(c: CampoDef, v: unknown): unknown {
   return vazioParaNull(v.trim())
 }
 
+const NOVA_OPCAO = '__nova__'
+
+/** Lista com as opções + "Nova…" para digitar uma que não existe (ex.: categorias). */
+function SelecaoLivre({ c, txt, aoMudar }: { c: CampoDef; txt: string; aoMudar: (v: unknown) => void }) {
+  const [digitando, setDigitando] = useState(false)
+  const opcoes = (c.opcoes ?? []).map((o) => String(o.valor))
+  if (txt && !opcoes.some((o) => o.toLowerCase() === txt.toLowerCase())) opcoes.push(txt)
+  if (digitando)
+    return (
+      <Entrada
+        autoFocus
+        value={txt}
+        placeholder={`Nova ${c.rotulo.toLowerCase()}`}
+        onChange={(e) => aoMudar(e.target.value)}
+        onBlur={() => setDigitando(false)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') setDigitando(false) }}
+        aria-label={c.rotulo}
+      />
+    )
+  return (
+    <Selecao
+      value={txt}
+      onChange={(e) => {
+        if (e.target.value === NOVA_OPCAO) { setDigitando(true); aoMudar('') }
+        else aoMudar(e.target.value)
+      }}
+      aria-label={c.rotulo}
+    >
+      {!txt && <option value="">{c.obrigatorio ? 'Escolha…' : '—'}</option>}
+      {opcoes.map((o) => <option key={o} value={o}>{o}</option>)}
+      <option value={NOVA_OPCAO}>+ Nova {c.rotulo.toLowerCase()}…</option>
+    </Selecao>
+  )
+}
+
 function EditorCampo({ c, valor, aoMudar, compacto }: { c: CampoDef; valor: unknown; aoMudar: (v: unknown) => void; compacto?: boolean }) {
   const txt = typeof valor === 'string' ? valor : paraCampo(c, valor)
-  const id = `lista-${c.chave}`
   switch (c.tipo) {
     case 'bool':
       return <input type="checkbox" className="check-inline" checked={Boolean(valor)} onChange={(e) => aoMudar(e.target.checked)} aria-label={c.rotulo} />
@@ -127,13 +161,7 @@ function EditorCampo({ c, valor, aoMudar, compacto }: { c: CampoDef; valor: unkn
         ? <Entrada value={txt} onChange={(e) => aoMudar(e.target.value)} aria-label={c.rotulo} />
         : <textarea className="entrada" rows={2} value={txt} onChange={(e) => aoMudar(e.target.value)} />
     case 'select':
-      if (c.livre)
-        return (
-          <>
-            <Entrada list={id} value={txt} onChange={(e) => aoMudar(e.target.value)} aria-label={c.rotulo} />
-            <datalist id={id}>{c.opcoes?.map((o) => <option key={String(o.valor)} value={String(o.valor)} />)}</datalist>
-          </>
-        )
+      if (c.livre) return <SelecaoLivre c={c} txt={txt} aoMudar={aoMudar} />
       return (
         <Selecao value={txt} onChange={(e) => aoMudar(e.target.value)} aria-label={c.rotulo}>
           <option value="">{c.obrigatorio ? 'Escolha…' : '—'}</option>
@@ -290,6 +318,7 @@ export function CadastroGenerico(p: Props) {
     setSalvando(false)
     if (error) return setErroForm(mensagemErro(error))
     avisar(edit.id ? `${p.nomeItem} atualizado.` : `${p.nomeItem} cadastrado.`)
+    if (edit.id) setPendentes((pd) => { const r = { ...pd }; delete r[edit.id!]; return r })
     setEdit(null)
     carregar()
   }
@@ -393,11 +422,12 @@ export function CadastroGenerico(p: Props) {
             <table className={`tabela ${planilha ? 'tabela-planilha' : 'tabela-clicavel'}`}>
               <thead>
                 <tr>
+                  {planilha && <th className="col-editar" />}
                   {camposLista.map((c) => (
                     <th key={c.chave} className={['dinheiro', 'numero'].includes(c.tipo) ? 'n' : ''} style={c.largura ? { minWidth: c.largura } : undefined}>{c.rotulo}</th>
                   ))}
                   {p.colunasExtras?.map((x) => <th key={x.rotulo} className={x.numerica ? 'n' : ''}>{x.rotulo}</th>)}
-                  {(planilha && podeExcluir) && <th />}
+                  {planilha && <th />}
                 </tr>
               </thead>
               <tbody>
@@ -411,6 +441,11 @@ export function CadastroGenerico(p: Props) {
                       className={[tom ? `linha-${tom}` : '', sujo ? 'linha-suja' : '', l.ativo === false ? 'inativa' : ''].join(' ')}
                       onClick={!planilha && (podeEditar || p.modo === 'formulario') ? () => { setErroForm(null); setEdit(l) } : undefined}
                     >
+                      {planilha && (
+                        <td className="col-editar">
+                          {l.id! > 0 && <button className="btn btn-fantasma btn-icone" title="Editar tudo deste item" aria-label={`Editar ${String(l[p.campos[0].chave])}`} onClick={() => { setErroForm(null); setEdit({ ...l, ...(pendentes[l.id!] ?? {}) }) }}>✏️</button>}
+                        </td>
+                      )}
                       {camposLista.map((c) => (
                         <td key={c.chave} className={['dinheiro', 'numero'].includes(c.tipo) && !planilha ? 'n' : ''}>
                           {planilha ? (
@@ -421,11 +456,11 @@ export function CadastroGenerico(p: Props) {
                         </td>
                       ))}
                       {p.colunasExtras?.map((x) => <td key={x.rotulo} className={x.numerica ? 'n' : ''}>{x.valor(atual)}</td>)}
-                      {(planilha && podeExcluir) && (
-                        <td className="n">
+                      {planilha && (
+                        <td className="n acoes-linha">
                           {l.id! < 0
                             ? <button className="link" onClick={() => setNovas((ns) => ns.filter((n) => n.id !== l.id))}>remover</button>
-                            : <button className="btn btn-fantasma btn-icone" title="Excluir" onClick={() => excluir(l)}>🗑</button>}
+                            : podeExcluir && <button className="btn btn-fantasma btn-icone" title="Excluir" onClick={() => excluir(l)}>🗑</button>}
                         </td>
                       )}
                     </tr>
@@ -438,7 +473,7 @@ export function CadastroGenerico(p: Props) {
       </Cartao>
       <p className="campo-dica">
         {num(filtradas.length)} de {num(linhas.length)} {linhas.length === 1 ? 'registro' : 'registros'}
-        {planilha && ' · edite direto nas células e clique em "Salvar alterações"'}
+        {planilha && ' · edite direto nas células e clique em "Salvar alterações", ou use ✏️ para abrir o item'}
         {!podeEditar && ' · somente leitura para o seu perfil'}
       </p>
 

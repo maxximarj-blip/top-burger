@@ -490,3 +490,5 @@ select.entrada { width: auto; padding-right: 28px; }
 .aviso-notas-erro { background: var(--ketchup); color: #fff; }
 .aviso-notas-erro:hover { background: #a8341f; }
 .aviso-notas-erro .aviso-notas-num { background: #fff; color: var(--ketchup); }
+.acoes-linha { white-space: nowrap; }
+.col-editar { width: 40px; padding-left: 6px !important; padding-right: 0 !important; }

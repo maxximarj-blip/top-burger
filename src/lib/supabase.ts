@@ -18,7 +18,11 @@ export const supabase = createClient(url || 'https://nao-configurado.supabase.co
 export function mensagemErro(e: unknown): string {
   const err = e as { message?: string; code?: string; details?: string } | null
   const msg = err?.message || String(e)
-  if (err?.code === '23505') return 'Já existe um registro com esses dados (ex.: mesmo nº de comanda no mesmo dia).'
+  if (err?.code === '23505') {
+    if (/comandas/.test(msg)) return 'Já existe uma comanda com esse número neste dia.'
+    if (/nome/.test(msg)) return 'Já existe um cadastro com esse nome. Use outro nome ou edite o existente.'
+    return 'Já existe um registro com esses dados.'
+  }
   if (err?.code === '23503') return 'Esse registro está em uso e não pode ser removido. Desative-o em vez de excluir.'
   if (err?.code === '42501' || /row-level security/i.test(msg)) return 'Você não tem permissão para essa ação.'
   if (/compras_chave_nfe_uk/.test(msg)) return 'Esta nota já foi lançada em outra compra.'
