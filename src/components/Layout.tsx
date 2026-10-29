@@ -1,5 +1,6 @@
-import { Fragment, useState, type ReactNode } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { recarregarPendentes, useFilaNotas } from '../lib/filaNotas'
 import { useAuth } from '../lib/auth'
 import { NOME_PAPEL } from '../lib/format'
 import type { Papel } from '../lib/types'
@@ -42,6 +43,18 @@ export function Layout() {
   const [menuAberto, setMenuAberto] = useState(false)
   const [conta, setConta] = useState(false)
   const local = useLocation()
+  const navegar = useNavigate()
+  const notas = useFilaNotas()
+  const gestor = pode('admin', 'gerente')
+  useEffect(() => {
+    if (!gestor) return
+    recarregarPendentes()
+    const foco = () => recarregarPendentes()
+    window.addEventListener('focus', foco)
+    const t = setInterval(foco, 120000)
+    return () => { window.removeEventListener('focus', foco); clearInterval(t) }
+  }, [gestor])
+  const qtdNotas = notas.pendentes.length
   const atual = MENU.find((m) => (m.para === '/' ? local.pathname === '/' : local.pathname.startsWith(m.para)))
 
   return (
@@ -65,6 +78,21 @@ export function Layout() {
             </Fragment>
           ))}
         </nav>
+        {gestor && notas.erros.length > 0 && notas.lendo.length === 0 && (
+          <button className="aviso-notas aviso-notas-erro" onClick={() => { setMenuAberto(false); navegar('/compras?importar=1') }}>
+            <span className="aviso-notas-num">!</span>
+            <span>{notas.erros.length === 1 ? '1 nota não pôde ser lida' : `${notas.erros.length} notas não puderam ser lidas`}<small>Toque para ver o motivo</small></span>
+          </button>
+        )}
+        {gestor && (notas.lendo.length > 0 || qtdNotas > 0) && (
+          <button className="aviso-notas" onClick={() => { setMenuAberto(false); navegar('/compras?importar=1') }}>
+            {notas.lendo.length > 0 ? <span className="spinner" /> : <span className="aviso-notas-num">{qtdNotas}</span>}
+            <span>
+              {notas.lendo.length > 0 ? `Lendo ${notas.lendo.length} nota(s)…` : `${qtdNotas === 1 ? 'Nota aguardando' : 'Notas aguardando'} conferência`}
+              {notas.lendo.length > 0 && qtdNotas > 0 && <small>{qtdNotas} aguardando conferência</small>}
+            </span>
+          </button>
+        )}
         <div className="usuario">
           <button className="usuario-info" onClick={() => setConta(true)} title="Minha conta">
             <span className="avatar">{perfil?.nome.slice(0, 1).toUpperCase()}</span>

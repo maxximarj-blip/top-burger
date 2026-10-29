@@ -1,24 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alerta, Botao, Campo, Entrada, EntradaValor, Modal, Opcoes, Selecao, Selo, useAvisos } from '../components/ui'
-import { brl, brlUnit, dataBR, hoje, lerValor, qtd, somarDias, valorParaCampo } from '../lib/format'
+import { brl, brlUnit, dataBR, dataHoraBR, hoje, lerValor, qtd, somarDias, valorParaCampo } from '../lib/format'
 import {
-  chaveMapa, deLeituraIA, formatarCnpjCpf, lerXmlNfe, prepararImagem, similaridade, soDigitos, sugerirFator, unidadePadrao,
-  type ItemNota, type LeituraIA, type NotaLida,
+  abrirImagem, adicionarArquivos, buscarPrevia, descartarNota, limparAvisos, recarregarPendentes, salvarRascunho, useFilaNotas,
+  type NotaImportada,
+} from '../lib/filaNotas'
+import {
+  chaveMapa, formatarCnpjCpf, similaridade, soDigitos, sugerirFator, unidadePadrao,
+  type ItemNota, type NotaLida,
 } from '../lib/nfe'
 import { mensagemErro, supabase } from '../lib/supabase'
 import type { Fornecedor, Insumo, NotaMapeamento, StatusCompra } from '../lib/types'
 import { CATEGORIAS_AVULSAS, FORMAS_COMPRA } from './CompraForm'
-
-type EstadoArquivo = 'lendo' | 'pronta' | 'erro' | 'lancada' | 'pulada'
-interface NaFila {
-  id: number
-  arquivo: File
-  previa: string | null
-  estado: EstadoArquivo
-  nota?: NotaLida
-  erro?: string
-  compraId?: number
-}
 
 interface Linha {
   item: ItemNota
@@ -30,27 +23,22 @@ interface Linha {
   fatorIncerto: boolean
 }
 
-const SUGESTAO_MINIMA = 0.4
-let seq = 0
-
-async function lerArquivo(f: File): Promise<NotaLida> {
-  const nome = f.name || 'foto'
-  if (/\.xml$/i.test(nome) || f.type.includes('xml')) return lerXmlNfe(await f.text(), nome)
-  if (!f.type.startsWith('image/') && f.type !== 'application/pdf') throw new Error(`${nome}: envie XML, PDF ou foto (JPG/PNG).`)
-  if (f.size > 15 * 1024 * 1024) throw new Error(`${nome}: arquivo muito grande (máx. 15 MB).`)
-  const { base64, tipo } = await prepararImagem(f)
-  const { data, error } = await supabase.functions.invoke('ler-nota', { body: { arquivo: base64, tipo } })
-  if (error) {
-    let msg = error.message
-    try {
-      const ctx = (error as { context?: Response }).context
-      if (ctx) msg = (await ctx.json()).erro ?? msg
-    } catch { /* corpo não-JSON */ }
-    if (/Failed to send|404|not found/i.test(msg)) msg = 'A leitura por foto não está publicada no Supabase (função "ler-nota"). Veja o README. XML funciona sem ela.'
-    throw new Error(`${nome}: ${msg}`)
-  }
-  return deLeituraIA((data as { nota: LeituraIA }).nota, nome, hoje())
+/** O que fica salvo da conferência enquanto a nota não é lançada */
+interface Rascunho {
+  forn: number | 'novo' | 'avulso'
+  novoNome: string
+  linhas: Omit<Linha, 'item'>[]
+  data: string
+  numero: string
+  status: StatusCompra
+  vencimento: string
+  forma: string
+  frete: string
+  desconto: string
+  lancarCaixa: boolean
 }
+
+const SUGESTAO_MINIMA = 0.4
 
 export function ImportarNota({ aberto, aoFechar, aoSalvar, fornecedores, insumos }: {
   aberto: boolean
@@ -59,123 +47,140 @@ export function ImportarNota({ aberto, aoFechar, aoSalvar, fornecedores, insumos
   fornecedores: Fornecedor[]
   insumos: Insumo[]
 }) {
-  const [fila, setFila] = useState<NaFila[]>([])
+  const fila = useFilaNotas()
+  const { confirmar, avisar } = useAvisos()
   const [atualId, setAtualId] = useState<number | null>(null)
-  const processando = useRef(false)
+  const [lancadas, setLancadas] = useState<{ id: number; nome: string; compraId: number }[]>([])
+  const [previa, setPrevia] = useState<string | null>(null)
   const inputArq = useRef<HTMLInputElement>(null)
   const inputFoto = useRef<HTMLInputElement>(null)
   const [arrastando, setArrastando] = useState(false)
+  const [perfis, setPerfis] = useState<Map<string, string>>(new Map())
 
   useEffect(() => {
-    if (!aberto) {
-      fila.forEach((f) => f.previa && URL.revokeObjectURL(f.previa))
-      setFila([])
-      setAtualId(null)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!aberto) return
+    recarregarPendentes()
+    supabase.from('perfis').select('id, nome').then(({ data }) => setPerfis(new Map(((data as { id: string; nome: string }[]) ?? []).map((p) => [p.id, p.nome]))))
   }, [aberto])
 
-  const atualizar = (id: number, mud: Partial<NaFila>) => setFila((fs) => fs.map((f) => (f.id === id ? { ...f, ...mud } : f)))
-
-  // processa a fila (XML na hora; fotos uma de cada vez)
   useEffect(() => {
-    if (processando.current) return
-    const prox = fila.find((f) => f.estado === 'lendo' && !f.nota && !f.erro)
-    if (!prox) return
-    processando.current = true
-    lerArquivo(prox.arquivo)
-      .then((nota) => atualizar(prox.id, { estado: 'pronta', nota }))
-      .catch((e) => atualizar(prox.id, { estado: 'erro', erro: e instanceof Error ? e.message : String(e) }))
-      .finally(() => { processando.current = false; setFila((fs) => [...fs]) })
-  }, [fila])
+    if (!aberto) { setLancadas([]); limparAvisos() }
+  }, [aberto])
 
-  // abre a primeira nota pronta automaticamente
+  // mantém uma nota selecionada enquanto houver pendentes
   useEffect(() => {
-    const atual = fila.find((f) => f.id === atualId)
-    if (atual && atual.estado === 'pronta') return
-    const prox = fila.find((f) => f.estado === 'pronta')
-    if (prox && prox.id !== atualId) setAtualId(prox.id)
-  }, [fila, atualId])
+    if (fila.pendentes.some((p) => p.id === atualId)) return
+    setAtualId(fila.pendentes[0]?.id ?? null)
+  }, [fila.pendentes, atualId])
 
-  const adicionar = (lista: FileList | File[] | null) => {
-    if (!lista) return
-    const novos = Array.from(lista).map((arquivo) => ({
-      id: ++seq,
-      arquivo,
-      previa: arquivo.type.startsWith('image/') ? URL.createObjectURL(arquivo) : null,
-      estado: 'lendo' as EstadoArquivo,
-    }))
-    setFila((fs) => [...fs, ...novos])
+  // miniatura da foto (vem do banco: funciona até depois de atualizar a página ou em outro aparelho)
+  const atual = fila.pendentes.find((p) => p.id === atualId)
+  useEffect(() => {
+    setPrevia(null)
+    if (atual?.origem === 'foto') buscarPrevia(atual.id).then(setPrevia)
+  }, [atual?.id, atual?.origem])
+
+  const descartar = async (n: NotaImportada) => {
+    const ok = await confirmar({
+      titulo: 'Descartar esta leitura?',
+      texto: <p>A nota <strong>{n.emitente}</strong> {n.numero ? `nº ${n.numero}` : ''} ({brl(n.total)}) sai da lista de conferência e <strong>não</strong> é lançada. Fica registrado na auditoria.</p>,
+      confirmar: 'Descartar',
+      perigo: true,
+    })
+    if (!ok) return
+    try {
+      await descartarNota(n.id)
+      avisar('Leitura descartada.', 'info')
+    } catch (e) {
+      avisar(mensagemErro(e), 'erro')
+    }
   }
 
-  const atual = fila.find((f) => f.id === atualId && f.estado === 'pronta')
-  const contagem = {
-    lendo: fila.filter((f) => f.estado === 'lendo').length,
-    prontas: fila.filter((f) => f.estado === 'pronta').length,
-    lancadas: fila.filter((f) => f.estado === 'lancada').length,
-    erros: fila.filter((f) => f.estado === 'erro').length,
+  const proxima = () => {
+    const ids = fila.pendentes.map((p) => p.id)
+    const i = ids.indexOf(atualId ?? -1)
+    setAtualId(ids[(i + 1) % ids.length] ?? null)
   }
+
+  const total = fila.lendo.length + fila.pendentes.length + lancadas.length + fila.erros.length
 
   return (
     <Modal aberto={aberto} aoFechar={aoFechar} gaveta largo titulo="Importar nota fiscal"
-      rodape={!atual && <Botao variante="primario" onClick={aoFechar}>{contagem.lancadas ? 'Concluir' : 'Fechar'}</Botao>}>
+      rodape={!atual && <Botao variante="primario" onClick={aoFechar}>{lancadas.length ? 'Concluir' : 'Fechar'}</Botao>}>
       <div className="importar">
-        {/* Entrada de arquivos */}
         <div
-          className={`zona-arquivos ${arrastando ? 'arrastando' : ''} ${fila.length ? 'compacta' : ''}`}
+          className={`zona-arquivos ${arrastando ? 'arrastando' : ''} ${total ? 'compacta' : ''}`}
           onDragOver={(e) => { e.preventDefault(); setArrastando(true) }}
           onDragLeave={() => setArrastando(false)}
-          onDrop={(e) => { e.preventDefault(); setArrastando(false); adicionar(e.dataTransfer.files) }}
+          onDrop={(e) => { e.preventDefault(); setArrastando(false); adicionarArquivos(e.dataTransfer.files) }}
         >
-          {!fila.length && (
+          {!total && (
             <>
               <strong>Arraste aqui o XML, o PDF ou a foto da nota</strong>
-              <span>Pode mandar várias de uma vez. O XML é lido na hora e sem custo; foto e PDF são lidos por inteligência artificial.</span>
+              <span>Pode mandar várias de uma vez. O XML é lido na hora e sem custo; foto e PDF são lidos por inteligência artificial. Tudo que for lido fica guardado até ser conferido — pode fechar esta janela sem perder nada.</span>
             </>
           )}
+          {total > 0 && <span className="zona-dica">As notas lidas ficam guardadas até serem lançadas ou descartadas.</span>}
           <div className="zona-botoes">
-            <Botao onClick={() => inputArq.current?.click()}>{fila.length ? '+ Mais arquivos' : 'Escolher arquivos'}</Botao>
+            <Botao onClick={() => inputArq.current?.click()}>{total ? '+ Mais arquivos' : 'Escolher arquivos'}</Botao>
             <Botao onClick={() => inputFoto.current?.click()}>📷 Tirar foto</Botao>
           </div>
           <input ref={inputArq} type="file" hidden multiple accept=".xml,text/xml,application/xml,application/pdf,image/*"
-            onChange={(e) => { adicionar(e.target.files); e.target.value = '' }} />
+            onChange={(e) => { adicionarArquivos(e.target.files); e.target.value = '' }} />
           <input ref={inputFoto} type="file" hidden accept="image/*" capture="environment"
-            onChange={(e) => { adicionar(e.target.files); e.target.value = '' }} />
+            onChange={(e) => { adicionarArquivos(e.target.files); e.target.value = '' }} />
         </div>
 
-        {fila.length > 0 && (
+        {total > 0 && (
           <div className="fila-notas">
-            {fila.map((f) => (
-              <button key={f.id} type="button" className={`fila-item ${f.id === atualId && f.estado === 'pronta' ? 'ativo' : ''} estado-${f.estado}`}
-                onClick={() => f.estado === 'pronta' && setAtualId(f.id)} title={f.erro ?? f.arquivo.name}>
-                <span className="fila-icone">{f.estado === 'lendo' ? <span className="spinner" /> : f.estado === 'lancada' ? '✓' : f.estado === 'erro' ? '!' : f.estado === 'pulada' ? '–' : f.nota?.origem === 'xml' ? 'XML' : 'IA'}</span>
+            {fila.pendentes.map((p) => (
+              <button key={`p${p.id}`} type="button" className={`fila-item estado-pronta ${p.id === atualId ? 'ativo' : ''}`} onClick={() => setAtualId(p.id)}
+                title={`Lida em ${dataHoraBR(p.criado_em)}${p.criado_por && perfis.get(p.criado_por) ? ` por ${perfis.get(p.criado_por)}` : ''}`}>
+                <span className="fila-icone">{p.origem === 'xml' ? 'XML' : 'IA'}</span>
                 <span className="fila-texto">
-                  <strong>{f.nota ? f.nota.emitente.fantasia || f.nota.emitente.nome : f.arquivo.name || 'Foto'}</strong>
-                  <small>{f.estado === 'lendo' ? 'Lendo…' : f.estado === 'erro' ? 'Não foi possível ler' : f.estado === 'lancada' ? `Lançada · compra #${f.compraId}` : f.estado === 'pulada' ? 'Pulada' : `${f.nota!.itens.length} itens · ${brl(f.nota!.total)}`}</small>
+                  <strong>{p.emitente || p.arquivo}</strong>
+                  <small>{p.nota.itens.length} itens · {brl(p.total)}{p.rascunho ? ' · em conferência' : ''}</small>
                 </span>
               </button>
+            ))}
+            {fila.lendo.map((l) => (
+              <div key={`l${l.id}`} className="fila-item estado-lendo">
+                <span className="fila-icone"><span className="spinner" /></span>
+                <span className="fila-texto"><strong>{l.nome}</strong><small>Lendo…</small></span>
+              </div>
+            ))}
+            {lancadas.map((l) => (
+              <div key={`ok${l.id}`} className="fila-item estado-lancada">
+                <span className="fila-icone">✓</span>
+                <span className="fila-texto"><strong>{l.nome}</strong><small>Lançada · compra #{l.compraId}</small></span>
+              </div>
             ))}
           </div>
         )}
 
-        {fila.filter((f) => f.estado === 'erro').map((f) => <Alerta key={f.id} tom="erro">{f.erro}</Alerta>)}
+        {fila.erros.map((f) => <Alerta key={f.id} tom="erro">{f.erro}</Alerta>)}
+        {fila.avisos.map((a, i) => <Alerta key={i} tom="info">{a}</Alerta>)}
 
-        {atual?.nota ? (
+        {atual ? (
           <Conferencia
             key={atual.id}
-            nota={atual.nota}
-            previa={atual.previa}
+            registro={atual}
+            previa={previa}
+            quem={atual.criado_por ? perfis.get(atual.criado_por) ?? null : null}
             fornecedores={fornecedores}
             insumos={insumos}
-            aoPular={() => atualizar(atual.id, { estado: 'pulada' })}
-            aoLancar={(compraId) => { atualizar(atual.id, { estado: 'lancada', compraId }); aoSalvar() }}
+            aoDepois={fila.pendentes.length > 1 ? proxima : null}
+            aoDescartar={() => descartar(atual)}
+            aoLancar={(compraId) => {
+              setLancadas((ls) => [...ls, { id: atual.id, nome: atual.emitente || atual.arquivo || 'Nota', compraId }])
+              recarregarPendentes()
+              aoSalvar()
+            }}
           />
-        ) : fila.length > 0 && contagem.lendo === 0 && contagem.prontas === 0 ? (
-          <Alerta tom={contagem.lancadas ? 'ok' : 'info'}>
-            {contagem.lancadas ? `${contagem.lancadas} nota(s) lançada(s). O estoque e os custos dos insumos já foram atualizados.` : 'Nenhuma nota para conferir.'}
-          </Alerta>
-        ) : contagem.lendo > 0 && !atual ? (
-          <div className="carregando"><span className="spinner" /> Lendo {contagem.lendo === 1 ? 'a nota' : `${contagem.lendo} notas`}… fotos podem levar alguns segundos.</div>
+        ) : fila.lendo.length > 0 ? (
+          <div className="carregando"><span className="spinner" /> Lendo {fila.lendo.length === 1 ? 'a nota' : `${fila.lendo.length} notas`}… pode fechar esta janela ou ir para outra tela: a leitura continua e a nota fica guardada.</div>
+        ) : lancadas.length > 0 ? (
+          <Alerta tom="ok">{lancadas.length} nota(s) lançada(s). O estoque e os custos dos insumos já foram atualizados.</Alerta>
         ) : null}
       </div>
     </Modal>
@@ -185,14 +190,18 @@ export function ImportarNota({ aberto, aoFechar, aoSalvar, fornecedores, insumos
 // =====================================================================
 // Conferência de uma nota
 // =====================================================================
-function Conferencia({ nota, previa, fornecedores, insumos, aoPular, aoLancar }: {
-  nota: NotaLida
+function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, aoDescartar, aoLancar }: {
+  registro: NotaImportada
   previa: string | null
+  quem: string | null
   fornecedores: Fornecedor[]
   insumos: Insumo[]
-  aoPular: () => void
+  aoDepois: (() => void) | null
+  aoDescartar: () => void
   aoLancar: (compraId: number) => void
 }) {
+  const nota: NotaLida = registro.nota
+  const salvo = registro.rascunho as Rascunho | null
   const { avisar, confirmar } = useAvisos()
   const ativos = useMemo(() => insumos.filter((i) => i.ativo), [insumos])
   const insumo = useCallback((id: number) => insumos.find((i) => i.id === id), [insumos])
@@ -214,9 +223,9 @@ function Conferencia({ nota, previa, fornecedores, insumos, aoPular, aoLancar }:
     }
     return melhor?.id ?? 'novo'
   }
-  const [forn, setForn] = useState<number | 'novo' | 'avulso'>(casarFornecedor)
+  const [forn, setForn] = useState<number | 'novo' | 'avulso'>(() => salvo?.forn ?? casarFornecedor())
   const fornPorCnpj = forn !== 'novo' && forn !== 'avulso' && !!soDigitos(nota.emitente.documento) && soDigitos(fornecedores.find((f) => f.id === forn)?.documento) === soDigitos(nota.emitente.documento)
-  const [novoNome, setNovoNome] = useState(() => tituloCaso(nota.emitente.fantasia || nota.emitente.nome))
+  const [novoNome, setNovoNome] = useState(() => salvo?.novoNome ?? tituloCaso(nota.emitente.fantasia || nota.emitente.nome))
   const [mapas, setMapas] = useState<NotaMapeamento[]>([])
   const fornecedor = typeof forn === 'number' ? fornecedores.find((f) => f.id === forn) : undefined
 
@@ -246,8 +255,17 @@ function Conferencia({ nota, previa, fornecedores, insumos, aoPular, aoLancar }:
     return { item, incluir: true, destino: '', categoria: 'Outros', fator: '1', origem: null, fatorIncerto: false }
   }), [nota, mapas, ativos, insumo])
 
-  const [linhas, setLinhas] = useState<Linha[]>(montarLinhas)
-  useEffect(() => { setLinhas(montarLinhas()) }, [montarLinhas])
+  const [linhas, setLinhas] = useState<Linha[]>(() =>
+    salvo?.linhas?.length === nota.itens.length
+      ? nota.itens.map((item, k) => ({ ...salvo.linhas[k], item }))
+      : montarLinhas())
+  // com rascunho: mantém as escolhas salvas enquanto o fornecedor for o mesmo
+  const fornRestaurado = useRef<typeof forn | null>(salvo ? salvo.forn : null)
+  useEffect(() => {
+    if (fornRestaurado.current !== null && fornRestaurado.current === forn) return
+    fornRestaurado.current = null
+    setLinhas(montarLinhas())
+  }, [montarLinhas, forn])
 
   const alterar = (k: number, mud: Partial<Linha>) => setLinhas((ls) => ls.map((l, i) => (i === k ? { ...l, ...mud } : l)))
   const escolherDestino = (k: number, valor: string) => {
@@ -260,15 +278,34 @@ function Conferencia({ nota, previa, fornecedores, insumos, aoPular, aoLancar }:
   }
 
   // ---- cabeçalho e pagamento
-  const [data, setData] = useState(nota.data || hoje())
-  const [numero, setNumero] = useState(nota.numero ?? '')
   const aPrazo = nota.vencimentos.length > 0
-  const [status, setStatus] = useState<StatusCompra>(aPrazo ? 'a_pagar' : 'paga')
-  const [vencimento, setVencimento] = useState(nota.vencimentos[0]?.data ?? '')
-  const [forma, setForma] = useState(nota.forma_pagamento && FORMAS_COMPRA.includes(nota.forma_pagamento) ? nota.forma_pagamento : nota.forma_pagamento ? 'Pix' : aPrazo ? 'Boleto' : '')
-  const [frete, setFrete] = useState(valorParaCampo(nota.frete))
-  const [desconto, setDesconto] = useState(valorParaCampo(nota.desconto))
-  const [lancarCaixa, setLancarCaixa] = useState(false)
+  const [data, setData] = useState(salvo?.data ?? (nota.data || hoje()))
+  const [numero, setNumero] = useState(salvo?.numero ?? nota.numero ?? '')
+  const [status, setStatus] = useState<StatusCompra>(salvo?.status ?? (aPrazo ? 'a_pagar' : 'paga'))
+  const [vencimento, setVencimento] = useState(salvo?.vencimento ?? nota.vencimentos[0]?.data ?? '')
+  const [forma, setForma] = useState(salvo?.forma ?? (nota.forma_pagamento && FORMAS_COMPRA.includes(nota.forma_pagamento) ? nota.forma_pagamento : nota.forma_pagamento ? 'Pix' : aPrazo ? 'Boleto' : ''))
+  const [frete, setFrete] = useState(salvo?.frete ?? valorParaCampo(nota.frete))
+  const [desconto, setDesconto] = useState(salvo?.desconto ?? valorParaCampo(nota.desconto))
+  const [lancarCaixa, setLancarCaixa] = useState(salvo?.lancarCaixa ?? false)
+  const [salvoEm, setSalvoEm] = useState<string | null>(salvo ? 'restaurado' : null)
+
+  // ---- salva sozinho cada ajuste (sobrevive a fechar a janela, atualizar a página ou trocar de aparelho)
+  const primeiraVez = useRef(true)
+  const lancando = useRef(false)
+  useEffect(() => {
+    if (primeiraVez.current) { primeiraVez.current = false; return }
+    const r: Rascunho = {
+      forn, novoNome, data, numero, status, vencimento, forma, frete, desconto, lancarCaixa,
+      linhas: linhas.map(({ item: _i, ...resto }) => resto),
+    }
+    const t = setTimeout(async () => {
+      if (lancando.current) return
+      if (await salvarRascunho(registro.id, r as unknown as Record<string, unknown>)) {
+        setSalvoEm(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }))
+      }
+    }, 700)
+    return () => clearTimeout(t)
+  }, [forn, novoNome, data, numero, status, vencimento, forma, frete, desconto, lancarCaixa, linhas, registro.id])
   const [duplicada, setDuplicada] = useState<{ id: number; data: string } | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -325,7 +362,9 @@ function Conferencia({ nota, previa, fornecedores, insumos, aoPular, aoLancar }:
       const parcelas = nota.vencimentos.length > 1
         ? `Parcelas: ${nota.vencimentos.map((v) => `${v.numero ?? ''} ${dataBR(v.data)} ${brl(v.valor)}`.trim()).join('; ')}`
         : ''
-      const { data: id, error } = await supabase.rpc('salvar_compra', {
+      lancando.current = true
+      const { data: id, error } = await supabase.rpc('lancar_nota_importada', {
+        p_nota_id: registro.id,
         p_compra: {
           data,
           fornecedor_id: fornecedorId,
@@ -362,7 +401,7 @@ function Conferencia({ nota, previa, fornecedores, insumos, aoPular, aoLancar }:
         }),
         p_lancar_caixa: status === 'paga' && forma === 'Dinheiro' && lancarCaixa,
       })
-      if (error) throw error
+      if (error) { lancando.current = false; throw error }
       avisar(`Nota ${numero || ''} lançada: ${brl(total)}.`)
       aoLancar(Number(id))
     } catch (e) {
@@ -386,20 +425,25 @@ function Conferencia({ nota, previa, fornecedores, insumos, aoPular, aoLancar }:
           <h3>Conferir nota {nota.numero ? `nº ${nota.numero}` : ''}</h3>
           <span className="campo-dica">
             {nota.modelo === '65' ? 'Cupom NFC-e' : nota.modelo === '55' ? 'NF-e' : 'Nota'} · emitida em {dataBR(nota.data)} · {nota.origem === 'xml' ? 'lida do XML' : 'lida da foto por IA'}
+            {' '}em {dataHoraBR(registro.criado_em)}{quem ? ` por ${quem}` : ''}
+          </span>
+          <span className={`rascunho-status ${salvoEm ? 'ok' : ''}`}>
+            {salvoEm === 'restaurado' ? '↺ Conferência retomada de onde parou' : salvoEm ? `✓ Ajustes salvos às ${salvoEm}` : 'Os ajustes são salvos automaticamente'}
           </span>
         </div>
         <div className="conf-total"><span>Total da nota</span><strong>{brl(nota.total)}</strong></div>
       </div>
 
-      {duplicada && <Alerta tom="erro">Esta nota <strong>já foi lançada</strong> na compra #{duplicada.id} de {dataBR(duplicada.data)}. Pule esta nota.</Alerta>}
+      {duplicada && <Alerta tom="erro">Esta nota <strong>já foi lançada</strong> na compra #{duplicada.id} de {dataBR(duplicada.data)}. Descarte esta leitura.</Alerta>}
       {nota.avisos.map((a, i) => <Alerta key={i} tom={nota.origem === 'foto' && i === 0 ? 'info' : 'alerta'}>{a}</Alerta>)}
 
-      <div className={previa ? 'conf-com-previa' : ''}>
+      <div className={nota.origem === 'foto' ? 'conf-com-previa' : ''}>
+        {nota.origem === 'foto' && !previa && <div className="previa-nota previa-carregando"><span className="spinner" /></div>}
         {previa && (
-          <a className="previa-nota" href={previa} target="_blank" rel="noreferrer" title="Abrir a foto em tamanho real">
+          <button type="button" className="previa-nota" onClick={() => abrirImagem(previa)} title="Abrir a foto em tamanho real">
             <img src={previa} alt="Foto da nota" />
             <small>Clique para ampliar</small>
-          </a>
+          </button>
         )}
         <div className="conf-campos">
           <div className="grade-2">
@@ -532,7 +576,8 @@ function Conferencia({ nota, previa, fornecedores, insumos, aoPular, aoLancar }:
 
       {erro && <Alerta tom="erro">{erro}</Alerta>}
       <div className="conf-acoes">
-        <Botao variante="fantasma" onClick={aoPular}>Pular esta nota</Botao>
+        <Botao variante="perigo" onClick={aoDescartar} className="mr-auto">Descartar leitura</Botao>
+        {aoDepois && <Botao variante="fantasma" onClick={aoDepois}>Conferir depois</Botao>}
         <Botao variante="primario" onClick={lancar} carregando={salvando} disabled={!!duplicada}>Lançar compra · {brl(total)}</Botao>
       </div>
     </div>

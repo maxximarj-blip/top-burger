@@ -476,3 +476,17 @@ select.entrada { width: auto; padding-right: 28px; }
 }
 .tabela-conferencia th:first-child, .tabela-conferencia td:first-child { min-width: 0; width: 28px; }
 .tabela-conferencia td.item-nota { min-width: 230px; }
+.aviso-notas { display: flex; align-items: center; gap: 10px; margin: 8px 0 12px; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--marca); color: var(--lateral); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.aviso-notas:hover { background: #f0a830; }
+.aviso-notas small { display: block; font-weight: 500; font-size: 12px; }
+.aviso-notas-num { flex: none; min-width: 24px; height: 24px; border-radius: 12px; background: var(--lateral); color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 800; padding: 0 6px; }
+.aviso-notas .spinner { color: var(--lateral); }
+.zona-dica { color: var(--texto-2); font-size: 12px; margin-right: auto; align-self: center; }
+.rascunho-status { display: block; font-size: 12px; color: var(--texto-2); margin-top: 2px; }
+.rascunho-status.ok { color: var(--alface); }
+.previa-nota { background: none; border: 0; padding: 0; cursor: zoom-in; font: inherit; }
+.previa-carregando { height: 150px; display: grid; place-items: center; background: var(--superficie-2); border-radius: 8px; border: 1px solid var(--linha); }
+.fila-item.estado-lendo { cursor: default; }
+.aviso-notas-erro { background: var(--ketchup); color: #fff; }
+.aviso-notas-erro:hover { background: #a8341f; }
+.aviso-notas-erro .aviso-notas-num { background: #fff; color: var(--ketchup); }

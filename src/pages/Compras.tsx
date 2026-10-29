@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Alerta, Botao, Cabecalho, Campo, Cartao, Carregando, Entrada, Kpi, Modal, Selecao, Selo, useAvisos, Vazio } from '../components/ui'
 import { useAuth } from '../lib/auth'
@@ -7,6 +8,7 @@ import { buscarTudo, mensagemErro, supabase } from '../lib/supabase'
 import type { Compra, CompraItem, Fornecedor, Insumo, RelatorioCompras } from '../lib/types'
 import { CompraForm, FORMAS_COMPRA } from './CompraForm'
 import { ImportarNota } from './ImportarNota'
+import { recarregarPendentes, useFilaNotas } from '../lib/filaNotas'
 
 type Aba = 'lancamentos' | 'pagar' | 'relatorio'
 const CORES = ['#e0912a', '#c8402a', '#5b7f3a', '#3f6e8c', '#8a5a9e', '#9c6b3c', '#4f8f86', '#b5874a', '#6d6d6d']
@@ -55,7 +57,12 @@ export function Compras() {
   const base = useBase()
   const [mes, setMes] = useState(inicioMes(hoje()))
   const [form, setForm] = useState<{ compra: Compra | null; itens: CompraItem[] } | null>(null)
-  const [importar, setImportar] = useState(false)
+  const [params, setParams] = useSearchParams()
+  const importar = params.has('importar')
+  const setImportar = (v: boolean) => setParams(v ? { importar: '1' } : {}, { replace: true })
+  const filaNotas = useFilaNotas()
+  useEffect(() => { recarregarPendentes() }, [])
+  const notasPendentes = filaNotas.pendentes.length + filaNotas.lendo.length
   const [versao, setVersao] = useState(0)
   const [aPagar, setAPagar] = useState<Compra[]>([])
 
@@ -80,11 +87,21 @@ export function Compras() {
         subtitulo="Tudo que entra na casa: mercadoria, embalagem, serviço. Itens de insumo atualizam estoque e custo."
         acoes={
           <>
-            <Botao onClick={() => setImportar(true)} className="nao-imprimir">📄 Importar nota (XML / foto)</Botao>
+            <Botao onClick={() => setImportar(true)} className="nao-imprimir">
+              📄 Importar nota (XML / foto){notasPendentes > 0 && <span className="contador contador-erro">{notasPendentes}</span>}
+            </Botao>
             <Botao variante="primario" onClick={() => abrir(null)} className="nao-imprimir">+ Nova compra</Botao>
           </>
         }
       />
+
+      {filaNotas.pendentes.length > 0 && !importar && (
+        <Alerta tom="alerta">
+          <strong>{filaNotas.pendentes.length}</strong> {filaNotas.pendentes.length === 1 ? 'nota lida aguardando' : 'notas lidas aguardando'} conferência
+          ({filaNotas.pendentes.map((p) => p.emitente).filter(Boolean).slice(0, 3).join(', ')}).{' '}
+          <button className="link" onClick={() => setImportar(true)}>Continuar conferência →</button>
+        </Alerta>
+      )}
 
       <div className="abas nao-imprimir">
         <button className={aba === 'lancamentos' ? 'ativo' : ''} onClick={() => setAba('lancamentos')}>Lançamentos</button>

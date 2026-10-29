@@ -51,6 +51,7 @@ As regras ficam **no banco** (Row Level Security + gatilhos), não só na tela �
    3. `supabase/migrations/20261027200000_clientes_fornecedores_produtos.sql` (clientes, fornecedores, insumos, cardápio inicial)
    4. `supabase/migrations/20261029000000_compras.sql` (compras, contas a pagar, relatório)
    5. `supabase/migrations/20261029200000_leitor_notas.sql` (leitor de notas: chave da NF-e e memória de itens)
+   6. `supabase/migrations/20261029300000_notas_pendentes.sql` (notas lidas ficam guardadas até a conferência)
 3. **Authentication → Sign In / Providers → Email**: **desligue "Allow new users to sign up"**.
    Assim só o admin cria contas. (Pode deixar "Confirm email" ligado.)
 
@@ -115,6 +116,7 @@ npm run dev
 - **Taxa nova da maquininha?** Cadastre uma nova taxa com a data de início — vendas antigas mantêm a taxa da época.
 - **Dia fechado** trava comandas e movimentos. Só admin reabre, com motivo registrado.
 - Status **Pendente** bloqueia o fechamento do dia.
+- **Notas lidas não se perdem:** cada nota lida fica guardada no banco até ser lançada ou descartada, com os ajustes da conferência salvos automaticamente. Pode fechar a janela, trocar de tela, atualizar a página ou continuar em outro aparelho. O menu lateral avisa quando há notas lendo, aguardando conferência ou com erro de leitura.
 - **Importar nota:** a mesma nota (chave de acesso) não entra duas vezes. A escolha "item da nota → insumo" e o fator de conversão ficam salvos por fornecedor e são aplicados sozinhos nas próximas notas. Nota com várias parcelas entra com o 1º vencimento; as parcelas vão para a observação.
 - **Compras:** item ligado a insumo soma no estoque e o custo do insumo passa a ser o da compra mais recente. Cancelar ou excluir a compra estorna o estoque. Compra paga com dinheiro da gaveta pode gerar a despesa no caixa automaticamente (e ela some se a compra for cancelada).
 
