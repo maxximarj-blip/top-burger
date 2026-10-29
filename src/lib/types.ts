@@ -189,3 +189,71 @@ export interface Auditoria {
   usuario: string | null
   em: string
 }
+
+// ---- Compras ----
+export type StatusCompra = 'a_pagar' | 'paga' | 'cancelada'
+
+export interface Compra {
+  id: number
+  data: string
+  fornecedor_id: number | null
+  fornecedor_nome: string | null
+  numero_nota: string | null
+  forma_pagamento: string | null
+  status: StatusCompra
+  vencimento: string | null
+  data_pagamento: string | null
+  valor_itens: number
+  frete: number
+  desconto: number
+  total: number
+  observacao: string | null
+  criado_em: string
+}
+
+export interface CompraItem {
+  id: number
+  compra_id: number
+  insumo_id: number | null
+  descricao: string
+  categoria: string
+  unidade: string
+  quantidade: number
+  valor_unitario: number
+  valor_total: number
+}
+
+export interface Insumo {
+  id: number
+  nome: string
+  categoria: string
+  unidade: string
+  custo_unitario: number
+  estoque_atual: number
+  estoque_minimo: number
+  fornecedor_id: number | null
+  ativo: boolean
+}
+
+export interface Fornecedor {
+  id: number
+  nome: string
+  categoria: string | null
+  prazo_pagamento_dias: number | null
+  ativo: boolean
+}
+
+export interface RelatorioCompras {
+  kpis: {
+    total: number; compras: number; fornecedores: number; ticket_medio: number; frete: number; desconto: number
+    pago: number; a_pagar: number; vencidas: number; faturamento: number; periodo_anterior: number
+  }
+  por_categoria: { categoria: string; total: number; compras: number }[]
+  por_fornecedor: { fornecedor: string; compras: number; total: number; a_pagar: number | null }[]
+  por_insumo: {
+    insumo: string; insumo_id: number | null; unidade: string; categoria: string; quantidade: number; total: number
+    preco_medio: number; preco_min: number; preco_max: number; compras: number
+  }[]
+  por_dia: { data: string; total: number; compras: number }[]
+  por_forma: { forma: string; total: number; compras: number }[]
+}

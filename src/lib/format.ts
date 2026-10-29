@@ -105,3 +105,19 @@ export function baixarCsv(nome: string, linhas: (string | number | null | undefi
   a.click()
   URL.revokeObjectURL(a.href)
 }
+
+const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
+
+/** "2026-10-15" -> "outubro de 2026" */
+export function mesExtenso(iso: string) {
+  const [a, m] = iso.split('-').map(Number)
+  return `${MESES[m - 1]} de ${a}`
+}
+
+/** Quantidade com até 3 casas, sem zeros sobrando */
+export const qtd = (v: number | string | null | undefined) =>
+  Number(v ?? 0).toLocaleString('pt-BR', { maximumFractionDigits: 3 })
+
+/** Preço unitário com 2 a 4 casas */
+export const brlUnit = (v: number | string | null | undefined) =>
+  Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 })

@@ -11,6 +11,7 @@ import { Insumos, Produtos } from './pages/Cardapio'
 import { Clientes, Fornecedores } from './pages/Pessoas'
 import { Cadastros } from './pages/Cadastros'
 import { Comandas } from './pages/Comandas'
+import { Compras } from './pages/Compras'
 import { Entregadores } from './pages/Entregadores'
 import { Fechamento } from './pages/Fechamento'
 import { Login, RedefinirSenha } from './pages/Login'
@@ -56,6 +57,7 @@ export default function App() {
             <Route path="clientes" element={<Clientes />} />
             <Route path="insumos" element={<Restrito papeis={['admin', 'gerente']}><Insumos /></Restrito>} />
             <Route path="fornecedores" element={<Restrito papeis={['admin', 'gerente']}><Fornecedores /></Restrito>} />
+            <Route path="compras" element={<Restrito papeis={['admin', 'gerente']}><Compras /></Restrito>} />
             <Route path="entregadores" element={<Restrito papeis={['admin', 'gerente']}><Entregadores /></Restrito>} />
             <Route path="recebiveis" element={<Restrito papeis={['admin', 'gerente']}><Recebiveis /></Restrito>} />
             <Route path="cadastros" element={<Restrito papeis={['admin', 'gerente']}><Cadastros /></Restrito>} />

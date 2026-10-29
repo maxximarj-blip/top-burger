@@ -18,6 +18,7 @@ Sistema web para controle de vendas e fechamento de caixa da hamburgueria — su
 | **Insumos** | Matéria-prima e embalagens: custo, estoque, mínimo, fornecedor; alerta de reposição |
 | **Clientes** | Cadastro nominal, WhatsApp, aniversário, histórico de pedidos e total gasto; vínculo na comanda |
 | **Fornecedores** | Contatos, CNPJ, Pix, prazo de pagamento, dias de entrega |
+| **Compras** | Lançamento com itens (insumos entram no estoque e atualizam o custo), contas a pagar com vencimentos, relatório do mês para imprimir/PDF e CSV |
 | **Configurações** | Canais, formas, máquinas com **taxas versionadas por data**, entregadores |
 | **Usuários** | Criar usuário, perfil (admin/gerente/caixa), desativar, redefinir senha |
 | **Auditoria** | Tudo que foi criado/alterado/excluído, por quem, com antes × depois |
@@ -31,6 +32,7 @@ Sistema web para controle de vendas e fechamento de caixa da hamburgueria — su
 | Fechar o caixa | | ✅ | ✅ |
 | Cadastrar/editar clientes; ver produtos | ✅ | ✅ | ✅ |
 | Produtos, insumos, fornecedores (editar) | | ✅ | ✅ |
+| Compras, contas a pagar, relatório de compras | | ✅ | ✅ |
 | Entregadores, recebíveis, configurações | | ✅ | ✅ |
 | Usuários, auditoria, reabrir dia fechado | | | ✅ |
 
@@ -46,6 +48,7 @@ As regras ficam **no banco** (Row Level Security + gatilhos), não só na tela �
    1. `supabase/migrations/20261027000000_init.sql` (estrutura e regras)
    2. `supabase/seed.sql` (canais, formas, máquinas e taxas, entregadores)
    3. `supabase/migrations/20261027200000_clientes_fornecedores_produtos.sql` (clientes, fornecedores, insumos, cardápio inicial)
+   4. `supabase/migrations/20261029000000_compras.sql` (compras, contas a pagar, relatório)
 3. **Authentication → Sign In / Providers → Email**: **desligue "Allow new users to sign up"**.
    Assim só o admin cria contas. (Pode deixar "Confirm email" ligado.)
 
@@ -100,6 +103,7 @@ npm run dev
 - **Taxa nova da maquininha?** Cadastre uma nova taxa com a data de início — vendas antigas mantêm a taxa da época.
 - **Dia fechado** trava comandas e movimentos. Só admin reabre, com motivo registrado.
 - Status **Pendente** bloqueia o fechamento do dia.
+- **Compras:** item ligado a insumo soma no estoque e o custo do insumo passa a ser o da compra mais recente. Cancelar ou excluir a compra estorna o estoque. Compra paga com dinheiro da gaveta pode gerar a despesa no caixa automaticamente (e ela some se a compra for cancelada).
 
 ## Estrutura
 ```

@@ -8,14 +8,17 @@ const TABELAS: Record<string, string> = {
   comandas: 'Comandas', movimentos_caixa: 'Movimentos de caixa', fechamentos: 'Fechamentos', perfis: 'Usuários',
   canais: 'Canais', formas_pagamento: 'Formas de pagamento', maquinas: 'Máquinas', maquina_taxas: 'Taxas', entregadores: 'Entregadores',
   produtos: 'Produtos', insumos: 'Insumos', clientes: 'Clientes', fornecedores: 'Fornecedores',
+  compras: 'Compras', compra_itens: 'Itens de compra',
 }
 const ACOES = { INSERT: ['Criou', 'ok'], UPDATE: ['Alterou', 'info'], DELETE: ['Excluiu', 'erro'] } as const
-const IGNORAR = new Set(['atualizado_em', 'atualizado_por', 'criado_em', 'resumo', 'conferido_em', 'conferido_por', 'fechado_por'])
+const IGNORAR = new Set(['atualizado_em', 'atualizado_por', 'criado_em', 'resumo', 'conferido_em', 'conferido_por', 'fechado_por', 'valor_itens'])
 const POR_PAGINA = 100
 
 function descrever(r: Registro) {
   const d = (r.depois ?? r.antes ?? {}) as Record<string, unknown>
   if (r.tabela === 'comandas') return `Comanda ${d.numero} de ${String(d.data).split('-').reverse().join('/')}`
+  if (r.tabela === 'compras') return `Compra #${d.id} de ${String(d.data).split('-').reverse().join('/')} — R$ ${Number(d.total ?? 0).toFixed(2).replace('.', ',')}`
+  if (r.tabela === 'compra_itens') return `${d.descricao} (compra #${d.compra_id})`
   if (r.tabela === 'fechamentos') return `Caixa de ${String(d.data).split('-').reverse().join('/')}`
   return String(d.nome ?? d.descricao ?? `#${r.registro_id}`)
 }

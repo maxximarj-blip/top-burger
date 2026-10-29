@@ -17,6 +17,7 @@ const I = {
   fornecedor: <path d="M3 7h11v9H3zM14 10h4l3 3v3h-7M7 19a2 2 0 1 0 0-.01M17 19a2 2 0 1 0 0-.01" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />,
   insumo: <path d="M4 8l8-4 8 4-8 4zM4 8v8l8 4 8-4V8M12 12v8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />,
   produto: <path d="M4 11c0-4 3.6-7 8-7s8 3 8 7zM3 14h18M4 17h16c0 2-1.5 3-3 3H7c-1.5 0-3-1-3-3z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />,
+  compras: <path d="M3 4h2l2.4 11h11l2-8H6.2M10 20a1 1 0 1 0 0-.01M18 20a1 1 0 1 0 0-.01" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
   historico: <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
 }
 
@@ -28,7 +29,8 @@ const MENU: { para: string; rotulo: string; icone: ReactNode; papeis: Papel[]; s
   { para: '/insumos', rotulo: 'Insumos', icone: I.insumo, papeis: ['admin', 'gerente'] },
   { para: '/clientes', rotulo: 'Clientes', icone: I.clientes, papeis: ['admin', 'gerente', 'caixa'] },
   { para: '/fornecedores', rotulo: 'Fornecedores', icone: I.fornecedor, papeis: ['admin', 'gerente'] },
-  { para: '/entregadores', rotulo: 'Entregadores', icone: I.moto, papeis: ['admin', 'gerente'], secao: 'Financeiro' },
+  { para: '/compras', rotulo: 'Compras', icone: I.compras, papeis: ['admin', 'gerente'], secao: 'Financeiro' },
+  { para: '/entregadores', rotulo: 'Entregadores', icone: I.moto, papeis: ['admin', 'gerente'] },
   { para: '/recebiveis', rotulo: 'Recebíveis', icone: I.calendario, papeis: ['admin', 'gerente'] },
   { para: '/cadastros', rotulo: 'Configurações', icone: I.config, papeis: ['admin', 'gerente'], secao: 'Sistema' },
   { para: '/usuarios', rotulo: 'Usuários', icone: I.usuarios, papeis: ['admin'] },
