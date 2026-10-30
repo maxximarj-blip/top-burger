@@ -64,7 +64,7 @@ O **primeiro** usuário do sistema recebe o perfil **admin**; os próximos você
 pip install openpyxl
 python scripts/importar_planilha.py "Top Burguers.xlsx" dados/importacao.sql
 ```
-Cole o conteúdo de `dados/importacao.sql` no SQL Editor e rode. O script imprime um relatório do que corrigiu (datas com ano errado, "dinheiro"/"Oline", canal digitado como número, números de comanda repetidos) e do que virou **Pendente** para revisar.
+Cole o conteúdo de `dados/importacao.sql` no SQL Editor e rode. Pode repetir com a planilha atualizada sempre que quiser: **só entram os dias que ainda não têm nenhuma comanda no sistema**, então nada é duplicado; o resultado mostra, dia a dia, o que foi importado e o que já existia. O script imprime um relatório do que corrigiu (datas com ano errado, "dinheiro"/"Oline", canal digitado como número, números de comanda repetidos) e do que virou **Pendente** para revisar.
 > ⚠️ `dados/` está no `.gitignore`: **não suba dados de venda para o GitHub.**
 
 ### 4. GitHub Pages

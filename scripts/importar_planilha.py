@@ -10,6 +10,11 @@ Uso:
 Depois, cole o conteúdo de dados/importacao.sql no SQL Editor do Supabase.
 O script imprime um relatório com tudo que foi corrigido ou ignorado.
 
+SEM DUPLICAR: pode rodar com a planilha inteira sempre que quiser. O SQL só
+grava os dias que ainda NÃO têm nenhuma comanda no sistema; dias que já têm
+(importados antes ou lançados pelo caixa) ficam de fora e aparecem no
+resultado como "já existia". Rodar o mesmo arquivo duas vezes não muda nada.
+
 ATENÇÃO: o arquivo gerado contém dados de vendas. A pasta dados/ está no
 .gitignore — não suba esse arquivo para o GitHub.
 """
@@ -235,30 +240,55 @@ def main(origem, destino):
     with open(destino, "w", encoding="utf-8") as f:
         f.write("-- Carga gerada por scripts/importar_planilha.py\n")
         f.write(f"-- Origem: {origem} | {len(registros)} comandas | gerado em {datetime.now():%d/%m/%Y %H:%M}\n")
-        f.write("begin;\nset local topburguer.importando = 'on';\n\n")
+        # Tudo num comando só: o SQL Editor do Supabase pode rodar cada comando separado,
+        # então nada aqui depende de tabela temporária ou de "begin/commit".
+        f.write("-- 1) entregadores que aparecem na planilha\n")
         f.write("insert into public.entregadores (nome) values\n  ")
         f.write(",\n  ".join(f"({sql_str(e)})" for e in entregadores))
         f.write("\non conflict (nome) do nothing;\n\n")
-        f.write("insert into public.comandas (data, numero, codigo_externo, canal_id, modalidade, entregador_id,\n"
-                "  valor_comanda, taxa_entrega, desconto, valor_pago, forma_pagamento_id, maquina_id, status, observacao)\n"
-                "select v.data::date, v.numero, v.externo, c.id, v.modalidade::public.modalidade, e.id,\n"
-                "  v.vc, v.te, v.de, v.vp, f.id, m.id, v.status::public.status_comanda, v.obs\n"
-                "from (values\n")
+        f.write("-- 2) comandas: só entram os dias que ainda não têm nenhuma comanda no sistema\n"
+                "with planilha (data, numero, externo, canal, modalidade, entregador, vc, te, de, vp, forma, maquina, status, obs) as (\n"
+                "  values\n")
         linhas = []
         for r in registros:
             linhas.append("  (" + ", ".join([
-                sql_str(r["data"].isoformat()), str(r["numero"]), sql_str(r["externo"]), sql_str(r["canal"]),
+                sql_str(r["data"].isoformat()) + "::date", str(r["numero"]), sql_str(r["externo"]), sql_str(r["canal"]),
                 sql_str(r["modalidade"]), sql_str(r["entregador"]),
-                sql_num(r["valor_comanda"]), sql_num(r["taxa_entrega"]), sql_num(r["desconto"]), sql_num(r["valor_pago"]),
+                sql_num(r["valor_comanda"]) + "::numeric", sql_num(r["taxa_entrega"]) + "::numeric",
+                sql_num(r["desconto"]) + "::numeric", sql_num(r["valor_pago"]) + "::numeric",
                 sql_str(r["forma"]), sql_str(r["maquina"]), sql_str(r["status"]), sql_str(r["observacao"]),
             ]) + ")")
         f.write(",\n".join(linhas))
-        f.write("\n) as v (data, numero, externo, canal, modalidade, entregador, vc, te, de, vp, forma, maquina, status, obs)\n"
-                "join public.canais c on c.nome = v.canal\n"
-                "left join public.entregadores e on e.nome = v.entregador\n"
-                "left join public.formas_pagamento f on f.nome = v.forma\n"
-                "left join public.maquinas m on m.nome = v.maquina\n"
-                "on conflict (data, numero) do nothing;\n\ncommit;\n")
+        f.write("\n),\n"
+                "modo as (select set_config('topburguer.importando', 'on', true) as ok),\n"
+                "ja_existia as (\n"
+                "  select data, count(*) as qtd from public.comandas where data in (select distinct data from planilha) group by data\n"
+                "),\n"
+                "gravadas as (\n"
+                "  insert into public.comandas (data, numero, codigo_externo, canal_id, modalidade, entregador_id,\n"
+                "    valor_comanda, taxa_entrega, desconto, valor_pago, forma_pagamento_id, maquina_id, status, observacao)\n"
+                "  select v.data, v.numero, v.externo, c.id, v.modalidade::public.modalidade, e.id,\n"
+                "    v.vc, v.te, v.de, v.vp, f.id, m.id, v.status::public.status_comanda, v.obs\n"
+                "  from modo, planilha v\n"
+                "  join public.canais c on c.nome = v.canal\n"
+                "  left join public.entregadores e on e.nome = v.entregador\n"
+                "  left join public.formas_pagamento f on f.nome = v.forma\n"
+                "  left join public.maquinas m on m.nome = v.maquina\n"
+                "  where modo.ok = 'on' and v.data not in (select data from ja_existia)\n"
+                "  on conflict (data, numero) do nothing\n"
+                "  returning data\n"
+                "),\n"
+                "por_dia as (select data, count(*) as qtd from gravadas group by data)\n"
+                "select to_char(p.data, 'DD/MM/YYYY') as dia, count(*) as comandas_na_planilha,\n"
+                "  'R$ ' || translate(to_char(sum(p.vp), 'FM999,990.00'), ',.', '.,') as valor_pago,\n"
+                "  case when g.data is not null then 'IMPORTADO (' || g.qtd || ')'\n"
+                "       when j.qtd = count(*) then 'já existia (' || j.qtd || ' no sistema) - ok'\n"
+                "       when j.data is not null then 'já existia, NÃO importado: sistema tem ' || j.qtd || ', planilha tem ' || count(*) || ' - conferir'\n"
+                "       else 'não gravado - avise' end as situacao\n"
+                "from planilha p\n"
+                "left join ja_existia j on j.data = p.data\n"
+                "left join por_dia g on g.data = p.data\n"
+                "group by p.data, j.data, j.qtd, g.data, g.qtd order by p.data;\n")
 
     # Relatório
     print(f"\n✔ {len(registros)} comandas exportadas para {destino}")
