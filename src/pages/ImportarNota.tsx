@@ -21,13 +21,30 @@ interface Linha {
   fator: string
   origem: 'memoria' | 'sugestao' | null
   fatorIncerto: boolean
+  /** correções feitas na conferência (texto do campo); ausente = valor lido da nota */
+  qtdTxt?: string
+  precoTxt?: string
+  /** item que não veio na leitura, incluído à mão na conferência */
+  manual?: boolean
+}
+
+const numTxt = (n: number, casas = 4) => String(Math.round(n * 10 ** casas) / 10 ** casas).replace('.', ',')
+const precoTxt = (n: number) => (Math.abs(n * 100 - Math.round(n * 100)) < 1e-6 ? n.toFixed(2) : numTxt(n)).replace('.', ',')
+
+/** Quantidade, preço e total do item já com as correções da conferência */
+function efetivo(l: Linha) {
+  const q = l.qtdTxt != null ? lerValor(l.qtdTxt) : l.item.quantidade
+  const u = l.precoTxt != null ? lerValor(l.precoTxt) : l.item.valor_unitario
+  if (l.manual) return { q, u, total: Math.round(q * u * 100) / 100, editado: false }
+  const editado = Math.abs(q - l.item.quantidade) > 1e-9 || Math.abs(u - l.item.valor_unitario) > 1e-9
+  return { q, u, total: editado ? Math.round(q * u * 100) / 100 : l.item.valor_total, editado }
 }
 
 /** O que fica salvo da conferência enquanto a nota não é lançada */
 interface Rascunho {
   forn: number | 'novo' | 'avulso'
   novoNome: string
-  linhas: Omit<Linha, 'item'>[]
+  linhas: (Omit<Linha, 'item'> & { item?: ItemNota })[]
   data: string
   numero: string
   status: StatusCompra
@@ -255,16 +272,23 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
     return { item, incluir: true, destino: '', categoria: 'Outros', fator: '1', origem: null, fatorIncerto: false }
   }), [nota, mapas, ativos, insumo])
 
-  const [linhas, setLinhas] = useState<Linha[]>(() =>
-    salvo?.linhas?.length === nota.itens.length
-      ? nota.itens.map((item, k) => ({ ...salvo.linhas[k], item }))
-      : montarLinhas())
+  const [linhas, setLinhas] = useState<Linha[]>(() => {
+    const daNota = (salvo?.linhas ?? []).filter((l) => !l.manual)
+    const manuais = (salvo?.linhas ?? []).filter((l) => l.manual && l.item) as Linha[]
+    return [
+      ...(daNota.length === nota.itens.length ? nota.itens.map((item, k) => ({ ...daNota[k], item })) : montarLinhas()),
+      ...manuais,
+    ]
+  })
   // com rascunho: mantém as escolhas salvas enquanto o fornecedor for o mesmo
   const fornRestaurado = useRef<typeof forn | null>(salvo ? salvo.forn : null)
   useEffect(() => {
     if (fornRestaurado.current !== null && fornRestaurado.current === forn) return
     fornRestaurado.current = null
-    setLinhas(montarLinhas())
+    setLinhas((ls) => [
+      ...montarLinhas().map((n, k) => ({ ...n, qtdTxt: ls[k]?.qtdTxt, precoTxt: ls[k]?.precoTxt })),
+      ...ls.filter((l) => l.manual),
+    ])
   }, [montarLinhas, forn])
 
   const alterar = (k: number, mud: Partial<Linha>) => setLinhas((ls) => ls.map((l, i) => (i === k ? { ...l, ...mud } : l)))
@@ -273,9 +297,16 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
     if (valor === 'avulso') return alterar(k, { destino: 'avulso', fator: '1', origem: null, fatorIncerto: false })
     if (!valor) return alterar(k, { destino: '', origem: null })
     const ins = insumo(Number(valor))!
+    if (l.manual) return alterar(k, { destino: ins.id, categoria: ins.categoria, fator: '1', origem: null, fatorIncerto: false, item: { ...l.item, unidade: ins.unidade, descricao: l.item.descricao || ins.nome } })
     const f = sugerirFator(l.item, ins.unidade)
     alterar(k, { destino: ins.id, categoria: ins.categoria, fator: String(f.fator).replace('.', ','), origem: null, fatorIncerto: !f.certeza })
   }
+
+  const adicionarItem = () => setLinhas((ls) => [...ls, {
+    item: { codigo: null, descricao: '', unidade: 'un', quantidade: 1, valor_unitario: 0, valor_total: 0 },
+    incluir: true, destino: '', categoria: 'Outros', fator: '1', origem: null, fatorIncerto: false, manual: true, qtdTxt: '1', precoTxt: '',
+  }])
+  const removerItem = (k: number) => setLinhas((ls) => ls.filter((_, i) => i !== k))
 
   // ---- cabeçalho e pagamento
   const aPrazo = nota.vencimentos.length > 0
@@ -296,7 +327,7 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
     if (primeiraVez.current) { primeiraVez.current = false; return }
     const r: Rascunho = {
       forn, novoNome, data, numero, status, vencimento, forma, frete, desconto, lancarCaixa,
-      linhas: linhas.map(({ item: _i, ...resto }) => resto),
+      linhas: linhas.map(({ item, ...resto }) => (resto.manual ? { ...resto, item } : resto)),
     }
     const t = setTimeout(async () => {
       if (lancando.current) return
@@ -324,7 +355,9 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
   // ---- contas
   const fatorNum = (l: Linha) => lerValor(l.fator) || 1
   const incluidas = linhas.filter((l) => l.incluir)
-  const somaItens = incluidas.reduce((s, l) => s + l.item.valor_total, 0)
+  const somaItens = Math.round(incluidas.reduce((s, l) => s + efetivo(l).total, 0) * 100) / 100
+  const corrigidos = incluidas.filter((l) => efetivo(l).editado)
+  const manuais = incluidas.filter((l) => l.manual)
   const total = Math.round((somaItens + lerValor(frete) - lerValor(desconto)) * 100) / 100
   const semDestino = incluidas.filter((l) => l.destino === '').length
   const difNota = Math.round((total - nota.total) * 100) / 100
@@ -333,13 +366,15 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
     setErro(null)
     if (duplicada) return setErro(`Esta nota já foi lançada (compra #${duplicada.id}).`)
     if (!incluidas.length) return setErro('Nenhum item marcado para lançar.')
+    const manualRuim = manuais.findIndex((l) => !l.item.descricao.trim() || efetivo(l).total <= 0)
+    if (manualRuim >= 0) return setErro('No item incluído à mão, preencha a descrição, a quantidade e o valor (ou remova o item).')
     if (semDestino) return setErro(`Escolha o insumo (ou "não é insumo") em ${semDestino} ${semDestino === 1 ? 'item' : 'itens'}.`)
     if (forn === 'novo' && !novoNome.trim()) return setErro('Informe o nome do novo fornecedor.')
     if (status === 'a_pagar' && !vencimento) return setErro('Informe o vencimento.')
     if (Math.abs(difNota) >= 0.01) {
       const ok = await confirmar({
         titulo: 'Total diferente da nota',
-        texto: <p>O total a lançar ({brl(total)}) está diferente do total da nota ({brl(nota.total)}), diferença de {brl(Math.abs(difNota))}. {incluidas.length < linhas.length ? 'Você desmarcou itens.' : 'Confira frete e desconto.'} Lançar assim mesmo?</p>,
+        texto: <p>O total a lançar ({brl(total)}) está diferente do total da nota ({brl(nota.total)}), diferença de {brl(Math.abs(difNota))}. {manuais.length ? 'Você incluiu itens que não estavam na nota.' : corrigidos.length ? 'Você corrigiu valores de itens.' : incluidas.length < linhas.length ? 'Você desmarcou itens.' : 'Confira frete e desconto.'} Lançar assim mesmo?</p>,
         confirmar: 'Lançar assim',
       })
       if (!ok) return
@@ -378,24 +413,33 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
           data_pagamento: status === 'paga' ? data : null,
           frete: lerValor(frete),
           desconto: lerValor(desconto),
-          observacao: [`Importada de ${nota.origem === 'xml' ? 'XML' : 'foto/PDF'} (${nota.arquivo})`, parcelas].filter(Boolean).join('. '),
+          observacao: [
+            `Importada de ${nota.origem === 'xml' ? 'XML' : 'foto/PDF'} (${nota.arquivo})`,
+            parcelas,
+            corrigidos.length ? 'Corrigido na conferência: ' + corrigidos.map((l) => {
+              const ef = efetivo(l)
+              return `${tituloCaso(l.item.descricao)} ${qtd(l.item.quantidade)} × ${brlUnit(l.item.valor_unitario)} → ${qtd(ef.q)} × ${brlUnit(ef.u)}`
+            }).join('; ') : '',
+            manuais.length ? 'Incluído à mão: ' + manuais.map((l) => `${l.item.descricao.trim()} ${brl(efetivo(l).total)}`).join('; ') : '',
+          ].filter(Boolean).join('. '),
         },
         p_itens: incluidas.map((l) => {
           const f = l.destino === 'avulso' ? 1 : fatorNum(l)
-          const q = Math.round(l.item.quantidade * f * 1000) / 1000
+          const ef = efetivo(l)
+          const q = Math.round(ef.q * f * 1000) / 1000
           const ins = typeof l.destino === 'number' ? insumo(l.destino) : undefined
           return {
             insumo_id: ins?.id ?? null,
-            descricao: ins ? ins.nome : tituloCaso(l.item.descricao),
+            descricao: ins ? ins.nome : l.manual ? l.item.descricao.trim() : tituloCaso(l.item.descricao),
             categoria: ins ? ins.categoria : l.categoria,
             unidade: ins ? ins.unidade : l.item.unidade.toLowerCase(),
             quantidade: q,
-            valor_unitario: q ? Math.round((l.item.valor_total / q) * 10000) / 10000 : 0,
+            valor_unitario: q ? Math.round((ef.total / q) * 10000) / 10000 : 0,
             codigo_nota: l.item.codigo,
-            descricao_nota: l.item.descricao,
-            quantidade_nota: l.item.quantidade,
+            descricao_nota: l.manual ? `${l.item.descricao.trim()} (incluído à mão)` : l.item.descricao,
+            quantidade_nota: ef.q,
             unidade_nota: l.item.unidade,
-            chave_mapa: chaveMapa(l.item),
+            chave_mapa: l.manual ? null : chaveMapa(l.item),
             fator: f,
           }
         }),
@@ -474,7 +518,7 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
 
       <div className="itens-compra">
         <div className="itens-topo">
-          <strong>Itens da nota ({linhas.length})</strong>
+          <strong>Itens da nota ({linhas.length}{linhas.some((l) => l.manual) ? `, ${linhas.filter((l) => l.manual).length} à mão` : ''})</strong>
           <span className="campo-dica">
             {daMemoria ? `${daMemoria} reconhecido(s) pela memória deste fornecedor. ` : ''}
             As escolhas ficam salvas: na próxima nota deste fornecedor os itens já vêm ligados.
@@ -489,14 +533,38 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
               {linhas.map((l, k) => {
                 const ins = typeof l.destino === 'number' ? insumo(l.destino) : undefined
                 const f = fatorNum(l)
-                const qEst = l.item.quantidade * f
+                const ef = efetivo(l)
+                const qEst = ef.q * f
                 const mudouUn = !!ins && (Math.abs(f - 1) > 1e-9 || unidadePadrao(l.item.unidade) !== unidadePadrao(ins.unidade))
                 return (
                   <tr key={k} className={l.incluir ? '' : 'excluida'}>
                     <td><input type="checkbox" checked={l.incluir} onChange={(e) => alterar(k, { incluir: e.target.checked })} aria-label="Lançar este item" title="Desmarque para não lançar este item" /></td>
                     <td className="item-nota">
-                      <strong>{l.item.descricao}</strong>
-                      <small>{l.item.codigo ? `cód. ${l.item.codigo} · ` : ''}{qtd(l.item.quantidade)} {l.item.unidade} × {brlUnit(l.item.valor_unitario)} = <b>{brl(l.item.valor_total)}</b></small>
+                      {l.manual ? (
+                        <div className="item-manual">
+                          <Selo tom="alerta">incluído à mão</Selo>
+                          <Entrada value={l.item.descricao} placeholder="Descrição (ex.: papel acoplado)" aria-label="Descrição do item"
+                            onChange={(e) => alterar(k, { item: { ...l.item, descricao: e.target.value } })} />
+                        </div>
+                      ) : <strong>{l.item.descricao}</strong>}
+                      {l.item.codigo && <small>cód. {l.item.codigo}</small>}
+                      <div className="valores-item">
+                        <Entrada className="entrada n" inputMode="decimal" aria-label="Quantidade" title="Quantidade (pode corrigir)"
+                          value={l.qtdTxt ?? numTxt(l.item.quantidade, 3)} onFocus={(e) => e.target.select()}
+                          onChange={(e) => alterar(k, { qtdTxt: e.target.value.replace(/[^\d,.]/g, '') })} />
+                        <span>{ins && l.manual ? ins.unidade : l.item.unidade} × R$</span>
+                        <Entrada className="entrada n" inputMode="decimal" aria-label="Valor unitário" title="Valor unitário (pode corrigir)"
+                          value={l.precoTxt ?? precoTxt(l.item.valor_unitario)} onFocus={(e) => e.target.select()} placeholder="0,00"
+                          onChange={(e) => alterar(k, { precoTxt: e.target.value.replace(/[^\d,.]/g, '') })} />
+                        <b>= {brl(ef.total)}</b>
+                      </div>
+                      {l.manual && <button className="link link-perigo" onClick={() => removerItem(k)}>remover item</button>}
+                      {ef.editado && (
+                        <small className="corrigido">
+                          corrigido · lido: {qtd(l.item.quantidade)} × {brlUnit(l.item.valor_unitario)} = {brl(l.item.valor_total)}{' '}
+                          <button className="link" onClick={() => alterar(k, { qtdTxt: undefined, precoTxt: undefined })}>desfazer</button>
+                        </small>
+                      )}
                     </td>
                     <td>
                       <Selecao value={String(l.destino)} onChange={(e) => escolherDestino(k, e.target.value)} aria-label="Insumo" className={l.destino === '' && l.incluir ? 'entrada pendente' : 'entrada'}>
@@ -527,9 +595,9 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
                       {ins ? (
                         <>
                           <strong className={mudouUn ? 'destaque-conv' : ''}>{qtd(qEst)} {ins.unidade}</strong>
-                          <small className="sub">{brlUnit(qEst ? l.item.valor_total / qEst : 0)}/{ins.unidade}
+                          <small className="sub">{brlUnit(qEst ? ef.total / qEst : 0)}/{ins.unidade}
                             {Number(ins.custo_unitario) > 0 && qEst > 0 && (() => {
-                              const v = (l.item.valor_total / qEst) / Number(ins.custo_unitario) - 1
+                              const v = (ef.total / qEst) / Number(ins.custo_unitario) - 1
                               return Math.abs(v) >= 0.15 ? <span className={v > 0 ? 'neg' : 'pos'}> ({v > 0 ? '+' : ''}{Math.round(v * 100)}% vs último)</span> : null
                             })()}
                           </small>
@@ -542,6 +610,7 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
             </tbody>
           </table>
         </div>
+        <Botao variante="fantasma" className="btn-adicionar-item" onClick={adicionarItem}>+ Adicionar item que não está na nota</Botao>
       </div>
 
       <div className="grade-4 resumo-compra">
