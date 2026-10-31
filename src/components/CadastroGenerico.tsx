@@ -57,6 +57,12 @@ interface Props {
   destaque?: (linha: Registro) => 'alerta' | 'erro' | null
   resumo?: (linhas: Registro[]) => ReactNode
   topo?: ReactNode
+  /** conteúdo do topo que depende dos registros carregados (ex.: mapa) */
+  topoDados?: (linhas: Registro[], recarregar: () => void) => ReactNode
+  /** bloco extra no formulário (ex.: localização) */
+  extraFormulario?: (edit: Registro, mudar: (fn: (r: Registro) => Registro) => void) => ReactNode
+  /** ajusta os dados antes de gravar (recebe o formulário inteiro) */
+  antesDeSalvar?: (dados: Registro, edit: Registro) => Promise<Registro>
 }
 
 const vazioParaNull = (v: unknown) => (v === '' || v === undefined ? null : v)
@@ -308,10 +314,13 @@ export function CadastroGenerico(p: Props) {
   // ---------------- Formulário ----------------
   const salvarForm = async () => {
     if (!edit) return
-    const dados = montar(edit, camposForm)
+    let dados = montar(edit, camposForm)
     const v = validar(dados)
     if (v) return setErroForm(v)
     setSalvando(true)
+    if (p.antesDeSalvar) {
+      try { dados = await p.antesDeSalvar(dados, edit) } catch { /* segue com os dados do formulário */ }
+    }
     const { error } = edit.id
       ? await supabase.from(p.tabela).update(dados).eq('id', edit.id)
       : await supabase.from(p.tabela).insert(dados)
@@ -385,6 +394,7 @@ export function CadastroGenerico(p: Props) {
       {p.topo}
       {erro && <Alerta tom="erro">{erro}</Alerta>}
       {p.resumo && !carregando && p.resumo(linhas.filter((l) => l.ativo !== false))}
+      {p.topoDados && (!carregando || linhas.length > 0) && p.topoDados(linhas, carregar)}
 
       <div className="barra-filtros">
         <Entrada className="entrada busca" placeholder="Buscar…" value={busca} onChange={(e) => setBusca(e.target.value)} />
@@ -507,6 +517,7 @@ export function CadastroGenerico(p: Props) {
               </Campo>
             ))}
           </div>
+          {p.extraFormulario?.(edit, (fn) => setEdit((e) => (e ? fn(e) : e)))}
           {p.colunasExtras && edit.id && (
             <dl className="lista-def">
               {p.colunasExtras.map((x) => <Fragment key={x.rotulo}><dt>{x.rotulo}</dt><dd>{x.valor(edit)}</dd></Fragment>)}

@@ -7,7 +7,7 @@ import type { Auditoria as Registro } from '../lib/types'
 const TABELAS: Record<string, string> = {
   comandas: 'Comandas', movimentos_caixa: 'Movimentos de caixa', fechamentos: 'Fechamentos', perfis: 'Usuários',
   canais: 'Canais', formas_pagamento: 'Formas de pagamento', maquinas: 'Máquinas', maquina_taxas: 'Taxas', entregadores: 'Entregadores',
-  produtos: 'Produtos', insumos: 'Insumos', clientes: 'Clientes', fornecedores: 'Fornecedores',
+  produtos: 'Produtos', insumos: 'Insumos', clientes: 'Clientes', fornecedores: 'Fornecedores', loja: 'Endereço da loja',
   compras: 'Compras', compra_itens: 'Itens de compra',
 }
 const ACOES = { INSERT: ['Criou', 'ok'], UPDATE: ['Alterou', 'info'], DELETE: ['Excluiu', 'erro'] } as const

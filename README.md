@@ -16,7 +16,7 @@ Sistema web para controle de vendas e fechamento de caixa da hamburgueria — su
 | **Recebíveis** | Agenda de quando cada venda na maquininha cai na conta (dias úteis) |
 | **Produtos** | Cardápio editável como planilha (preço, custo, margem e lucro por item), por categoria |
 | **Insumos** | Matéria-prima e embalagens: custo, estoque, mínimo, fornecedor; alerta de reposição |
-| **Clientes** | Cadastro nominal, WhatsApp, aniversário, histórico de pedidos e total gasto; vínculo na comanda |
+| **Clientes** | Cadastro nominal, WhatsApp, aniversário, histórico de pedidos e total gasto; vínculo na comanda; **mapa** com pin verde (comprou em até 30 dias), amarelo (31–90) e vermelho (mais de 90), cinza para quem nunca comprou |
 | **Fornecedores** | Contatos, CNPJ, Pix, prazo de pagamento, dias de entrega |
 | **Compras** | Lançamento com itens (insumos entram no estoque e atualizam o custo), contas a pagar com vencimentos, relatório do mês para imprimir/PDF e CSV |
 | **Importar nota** | Lê o **XML** da NF-e/NFC-e (grátis, exato) ou a **foto/PDF** da nota (IA), reconhece o fornecedor pelo CNPJ, liga os itens aos insumos com conversão de unidade (CX 12 → 12 un) e **aprende** para as próximas notas |
@@ -52,6 +52,7 @@ As regras ficam **no banco** (Row Level Security + gatilhos), não só na tela �
    4. `supabase/migrations/20261029000000_compras.sql` (compras, contas a pagar, relatório)
    5. `supabase/migrations/20261029200000_leitor_notas.sql` (leitor de notas: chave da NF-e e memória de itens)
    6. `supabase/migrations/20261029300000_notas_pendentes.sql` (notas lidas ficam guardadas até a conferência)
+   7. `supabase/migrations/20261031000000_mapa_clientes.sql` (mapa de clientes: CEP, cidade, posição e endereço da loja)
 3. **Authentication → Sign In / Providers → Email**: **desligue "Allow new users to sign up"**.
    Assim só o admin cria contas. (Pode deixar "Confirm email" ligado.)
 
@@ -110,6 +111,7 @@ npm run dev
 ```
 
 ## Regras de negócio importantes
+- **Mapa de clientes:** usa OpenStreetMap (grátis, sem chave). A posição é buscada pelo endereço uma vez e fica gravada no cadastro; o CEP preenche rua, bairro e cidade. Sem rua encontrada, o pin vai para o centro do bairro/CEP (aproximado) e pode ser arrastado no cadastro. Clientes sem cidade usam a cidade da loja (botão 🍔 no mapa).
 - **Líquido = valor pago − taxa da maquininha.** O desconto já está dentro do valor pago, então não é subtraído de novo (a planilha antiga descontava duas vezes).
 - **Diferença** = comanda + entrega − desconto − pago. Em 99/iFood é a comissão da plataforma; no canal próprio, qualquer diferença aparece como **divergência** para conferência.
 - **"Pix na máquina"** = forma *Pix* + máquina informada. Pix na chave da loja = *Pix* sem máquina.
