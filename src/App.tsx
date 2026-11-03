@@ -16,6 +16,7 @@ import { Entregadores } from './pages/Entregadores'
 import { Fechamento } from './pages/Fechamento'
 import { Login, RedefinirSenha } from './pages/Login'
 import { Painel } from './pages/Painel'
+import { Dre } from './pages/Dre'
 import { Recebiveis } from './pages/Recebiveis'
 import { Usuarios } from './pages/Usuarios'
 
@@ -61,6 +62,7 @@ export default function App() {
             <Route path="entregadores" element={<Restrito papeis={['admin', 'gerente']}><Entregadores /></Restrito>} />
             <Route path="recebiveis" element={<Restrito papeis={['admin', 'gerente']}><Recebiveis /></Restrito>} />
             <Route path="cadastros" element={<Restrito papeis={['admin', 'gerente']}><Cadastros /></Restrito>} />
+            <Route path="dre" element={<Restrito papeis={['admin']}><Dre /></Restrito>} />
             <Route path="usuarios" element={<Restrito papeis={['admin']}><Usuarios /></Restrito>} />
             <Route path="auditoria" element={<Restrito papeis={['admin']}><Auditoria /></Restrito>} />
             <Route path="*" element={<Navigate to="/" replace />} />

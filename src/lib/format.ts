@@ -1,4 +1,4 @@
-import type { Modalidade, Papel, StatusComanda, TipoMovimento } from './types'
+import type { Modalidade, Papel, StatusComanda, TipoMovimento, Turno } from './types'
 
 const moeda = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 const numero = new Intl.NumberFormat('pt-BR')
@@ -61,6 +61,16 @@ export const NOME_MODALIDADE: Record<Modalidade, string> = {
   delivery_plataforma: 'Entrega plataforma',
   retirada: 'Retirada',
   mesa: 'Mesa',
+}
+
+export const NOME_TURNO: Record<Turno | 'sem', string> = { manha: 'Manhã', tarde: 'Tarde', noite: 'Noite', sem: 'Sem turno' }
+export const TURNOS: Turno[] = ['manha', 'tarde', 'noite']
+/** Turno pelo relógio: manhã até 11h59, tarde até 17h59, noite a partir das 18h (madrugada conta como noite) */
+export function turnoAgora(d = new Date()): Turno {
+  const h = d.getHours()
+  if (h >= 5 && h < 12) return 'manha'
+  if (h >= 12 && h < 18) return 'tarde'
+  return 'noite'
 }
 
 export const NOME_STATUS: Record<StatusComanda, string> = {

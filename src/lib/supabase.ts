@@ -19,7 +19,7 @@ export function mensagemErro(e: unknown): string {
   const err = e as { message?: string; code?: string; details?: string } | null
   const msg = err?.message || String(e)
   if (err?.code === '23505') {
-    if (/comandas/.test(msg)) return 'Já existe uma comanda com esse número neste dia.'
+    if (/comandas/.test(msg)) return 'Já existe uma comanda com esse número neste dia e turno.'
     if (/nome/.test(msg)) return 'Já existe um cadastro com esse nome. Use outro nome ou edite o existente.'
     return 'Já existe um registro com esses dados.'
   }

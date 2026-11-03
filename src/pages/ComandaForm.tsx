@@ -3,14 +3,15 @@ import { BuscaCliente, type ClienteResumo } from '../components/BuscaCliente'
 import { Alerta, Botao, Campo, Entrada, EntradaValor, Modal, Opcoes, Selecao, useAvisos } from '../components/ui'
 import { useAuth } from '../lib/auth'
 import { useCadastros } from '../lib/cadastros'
-import { brl, lerValor, NOME_MODALIDADE, NOME_STATUS, pct, valorParaCampo } from '../lib/format'
+import { brl, lerValor, NOME_MODALIDADE, NOME_STATUS, NOME_TURNO, pct, TURNOS, turnoAgora, valorParaCampo } from '../lib/format'
 import { mensagemErro, supabase } from '../lib/supabase'
-import type { Comanda, ComandaInput, Modalidade, StatusComanda } from '../lib/types'
+import type { Comanda, ComandaInput, Modalidade, StatusComanda, Turno } from '../lib/types'
 
 const TAXA_ENTREGA_PADRAO = '6,00'
 
 interface Estado {
   data: string
+  turno: Turno | null
   numero: string
   codigo_externo: string
   cliente: ClienteResumo | null
@@ -32,6 +33,7 @@ interface Estado {
 function deComanda(c: Comanda): Estado {
   return {
     data: c.data,
+    turno: c.turno,
     numero: String(c.numero),
     codigo_externo: c.codigo_externo ?? '',
     cliente: null,
@@ -54,6 +56,7 @@ function deComanda(c: Comanda): Estado {
 function vazio(data: string, anterior?: Estado): Estado {
   return {
     data,
+    turno: anterior?.turno ?? turnoAgora(),
     numero: '',
     codigo_externo: '',
     cliente: null,
@@ -90,9 +93,10 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
 
   const set = <K extends keyof Estado>(k: K, v: Estado[K]) => setF((s) => ({ ...s, [k]: v }))
 
-  const buscarNumero = async (data: string) => {
-    const { data: n } = await supabase.rpc('proximo_numero', { p_data: data })
-    if (typeof n === 'number') setF((s) => (s.data === data ? { ...s, numero: String(n) } : s))
+  // sugere o próximo nº livre do turno (o usuário pode trocar)
+  const buscarNumero = async (data: string, turno: Turno | null) => {
+    const { data: n } = await supabase.rpc('proximo_numero', { p_data: data, p_turno: turno })
+    if (typeof n === 'number') setF((s) => (s.data === data && s.turno === turno ? { ...s, numero: String(n) } : s))
   }
 
   useEffect(() => {
@@ -106,8 +110,9 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
       }
     }
     else {
-      setF(vazio(dataPadrao))
-      buscarNumero(dataPadrao)
+      const novo = vazio(dataPadrao)
+      setF(novo)
+      buscarNumero(dataPadrao, novo.turno)
     }
   }, [aberto, comanda, dataPadrao])
 
@@ -170,6 +175,7 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
 
   const validar = (): string | null => {
     if (!f.data) return 'Informe a data.'
+    if (!f.turno && (!comanda || comanda.turno)) return 'Escolha o turno (manhã, tarde ou noite).'
     if (!Number(f.numero)) return 'Informe o número da comanda.'
     if (!f.canal_id) return 'Escolha o canal.'
     if (!f.modalidade) return 'Escolha a modalidade (delivery, retirada, mesa…).'
@@ -203,6 +209,7 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
     const dados: ComandaInput = {
       data: f.data,
       numero: Number(f.numero),
+      turno: f.turno,
       codigo_externo: f.codigo_externo.trim() || null,
       cliente_id: f.cliente?.id ?? null,
       canal_id: f.canal_id!,
@@ -231,7 +238,7 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
     aoSalvar()
     if (continuar && !comanda) {
       setF((s) => vazio(s.data, s))
-      buscarNumero(f.data)
+      buscarNumero(f.data, f.turno)
     } else {
       aoFechar()
     }
@@ -258,7 +265,7 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
       aberto={aberto}
       aoFechar={aoFechar}
       gaveta
-      titulo={comanda ? `Comanda ${comanda.numero}` : 'Nova comanda'}
+      titulo={comanda ? `Comanda ${comanda.numero}${comanda.turno ? ` · ${NOME_TURNO[comanda.turno]}` : ''}` : 'Nova comanda'}
       rodape={
         <>
           {comanda && gestor && <Botao variante="perigo" onClick={excluir} className="mr-auto">Excluir</Botao>}
@@ -273,15 +280,21 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
 
         <div className="grade-3">
           <Campo rotulo="Data">
-            <Entrada type="date" value={f.data} onChange={(e) => { set('data', e.target.value); if (!comanda) buscarNumero(e.target.value) }} />
+            <Entrada type="date" value={f.data} onChange={(e) => { set('data', e.target.value); if (!comanda) buscarNumero(e.target.value, f.turno) }} />
           </Campo>
-          <Campo rotulo="Nº comanda">
-            <Entrada inputMode="numeric" value={f.numero} onChange={(e) => set('numero', e.target.value.replace(/\D/g, ''))} />
+          <Campo rotulo="Nº comanda" dica={comanda ? 'Pode corrigir' : 'Sugerido: próximo do turno — pode trocar'}>
+            <Entrada inputMode="numeric" value={f.numero} aria-label="Nº comanda" onFocus={(e) => e.target.select()}
+              onChange={(e) => set('numero', e.target.value.replace(/\D/g, ''))} />
           </Campo>
           <Campo rotulo="Nº pedido na plataforma" dica={canal?.marketplace ? 'Ex.: 562006' : 'Opcional'}>
             <Entrada value={f.codigo_externo} onChange={(e) => set('codigo_externo', e.target.value)} />
           </Campo>
         </div>
+
+        <Campo rotulo="Turno" dica={comanda && !comanda.turno && !f.turno ? 'Comanda antiga, lançada sem turno' : undefined}>
+          <Opcoes nome="Turno" valor={f.turno} aoMudar={(t) => { set('turno', t); if (!comanda) buscarNumero(f.data, t) }}
+            opcoes={TURNOS.map((t) => ({ valor: t, rotulo: NOME_TURNO[t] }))} />
+        </Campo>
 
         <Campo rotulo="Cliente">
           <BuscaCliente valor={f.cliente} aoMudar={(c) => set('cliente', c)} />

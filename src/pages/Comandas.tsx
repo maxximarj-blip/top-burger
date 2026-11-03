@@ -3,9 +3,11 @@ import { SeletorDia } from '../components/Periodo'
 import { Alerta, Botao, Cabecalho, Cartao, Carregando, Entrada, Selecao, Selo, useAvisos, Vazio } from '../components/ui'
 import { useAuth } from '../lib/auth'
 import { useCadastros } from '../lib/cadastros'
-import { baixarCsv, brl, dataBR, diaSemana, hoje, NOME_MODALIDADE, NOME_STATUS, num } from '../lib/format'
+import { baixarCsv, brl, dataBR, diaSemana, hoje, NOME_MODALIDADE, NOME_STATUS, NOME_TURNO, num, TURNOS } from '../lib/format'
 import { buscarTudo, mensagemErro, supabase } from '../lib/supabase'
 import type { Comanda, StatusComanda } from '../lib/types'
+
+const ORDEM_TURNO: Record<string, number> = { noite: 3, tarde: 2, manha: 1 }
 import { ComandaForm } from './ComandaForm'
 
 type Filtro = 'todas' | 'pendentes' | 'divergentes' | 'nao_conferidas'
@@ -29,6 +31,7 @@ export function Comandas() {
   const [busca, setBusca] = useState('')
   const [canal, setCanal] = useState(0)
   const [forma, setForma] = useState(0)
+  const [turno, setTurno] = useState('')
   const [filtro, setFiltro] = useState<Filtro>('todas')
   const [selecionadas, setSelecionadas] = useState<Set<number>>(new Set())
 
@@ -92,6 +95,7 @@ export function Comandas() {
     return lista.filter((c) => {
       if (canal && c.canal_id !== canal) return false
       if (forma && c.forma_pagamento_id !== forma) return false
+      if (turno && (c.turno ?? 'sem') !== turno) return false
       if (filtro === 'pendentes' && c.status !== 'pendente') return false
       if (filtro === 'divergentes' && !divergente(c)) return false
       if (filtro === 'nao_conferidas' && c.conferido) return false
@@ -100,8 +104,8 @@ export function Comandas() {
         if (!alvo.includes(t)) return false
       }
       return true
-    })
-  }, [lista, busca, canal, forma, filtro, divergente, cad, clientes])
+    }).sort((a, b) => (a.data === b.data ? (ORDEM_TURNO[b.turno ?? ''] ?? 0) - (ORDEM_TURNO[a.turno ?? ''] ?? 0) || b.numero - a.numero : a.data < b.data ? 1 : -1))
+  }, [lista, busca, canal, forma, turno, filtro, divergente, cad, clientes])
 
   const totais = useMemo(() => {
     const validas = filtradas.filter((c) => c.status !== 'cancelado')
@@ -134,10 +138,10 @@ export function Comandas() {
 
   const exportar = () => {
     baixarCsv(`comandas_${de}_${ate}.csv`, [
-      ['Data', 'Nº', 'Pedido plataforma', 'Cliente', 'Canal', 'Modalidade', 'Entregador', 'Valor comanda', 'Taxa entrega', 'Desconto',
+      ['Data', 'Turno', 'Nº', 'Pedido plataforma', 'Cliente', 'Canal', 'Modalidade', 'Entregador', 'Valor comanda', 'Taxa entrega', 'Desconto',
         'Valor pago', 'Forma', 'Máquina', 'Taxa %', 'Valor taxa', 'Líquido', 'Diferença', 'Prev. recebimento', 'Status', 'Conferido', 'Observação'],
       ...filtradas.map((c) => [
-        dataBR(c.data), c.numero, c.codigo_externo, c.cliente_id ? clientes.get(c.cliente_id) : '', cad.nomeCanal(c.canal_id), NOME_MODALIDADE[c.modalidade],
+        dataBR(c.data), NOME_TURNO[c.turno ?? 'sem'], c.numero, c.codigo_externo, c.cliente_id ? clientes.get(c.cliente_id) : '', cad.nomeCanal(c.canal_id), NOME_MODALIDADE[c.modalidade],
         c.entregador_id ? cad.nomeEntregador(c.entregador_id) : '', Number(c.valor_comanda), Number(c.taxa_entrega),
         Number(c.desconto), Number(c.valor_pago), c.forma_pagamento_id ? cad.nomeForma(c.forma_pagamento_id) : '',
         c.maquina_id ? cad.nomeMaquina(c.maquina_id) : '', Number(c.taxa_pct), Number(c.valor_taxa), Number(c.valor_liquido),
@@ -181,6 +185,11 @@ export function Comandas() {
         <Selecao value={canal} onChange={(e) => setCanal(Number(e.target.value))}>
           <option value={0}>Todos os canais</option>
           {cad.canais.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+        </Selecao>
+        <Selecao value={turno} onChange={(e) => setTurno(e.target.value)} aria-label="Turno">
+          <option value="">Todos os turnos</option>
+          {TURNOS.map((t) => <option key={t} value={t}>{NOME_TURNO[t]}</option>)}
+          {lista.some((c) => !c.turno) && <option value="sem">Sem turno</option>}
         </Selecao>
         <Selecao value={forma} onChange={(e) => setForma(Number(e.target.value))}>
           <option value={0}>Todas as formas</option>
@@ -255,6 +264,7 @@ export function Comandas() {
                     {modo === 'periodo' && <td>{dataBR(c.data, true)}</td>}
                     <td className="forte">
                       {c.numero}
+                      {c.turno && <span className={`turno-tag turno-${c.turno}`}>{NOME_TURNO[c.turno]}</span>}
                       {c.codigo_externo && <small className="sub">{c.codigo_externo}</small>}
                       {c.cliente_id && <small className="sub cliente-tag">👤 {clientes.get(c.cliente_id) ?? '…'}</small>}
                     </td>

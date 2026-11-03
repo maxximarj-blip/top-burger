@@ -41,7 +41,7 @@ function SeloStatus({ c }: { c: Compra }) {
 }
 
 /** Navegação de mês: ‹ outubro de 2026 › */
-function SeletorMes({ valor, aoMudar }: { valor: string; aoMudar: (v: string) => void }) {
+export function SeletorMes({ valor, aoMudar }: { valor: string; aoMudar: (v: string) => void }) {
   return (
     <div className="seletor-dia nao-imprimir">
       <button type="button" className="btn btn-fantasma btn-icone" onClick={() => aoMudar(inicioMes(valor, -1))} aria-label="Mês anterior">‹</button>

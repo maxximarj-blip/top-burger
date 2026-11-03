@@ -1,6 +1,7 @@
 export type Papel = 'admin' | 'gerente' | 'caixa'
 export type StatusComanda = 'recebido' | 'pendente' | 'cancelado'
 export type Modalidade = 'delivery_proprio' | 'delivery_plataforma' | 'retirada' | 'mesa'
+export type Turno = 'manha' | 'tarde' | 'noite'
 export type TipoMovimento = 'suprimento' | 'sangria' | 'despesa' | 'pagamento_entregador'
 
 export interface Perfil {
@@ -56,6 +57,7 @@ export interface Comanda {
   id: number
   data: string
   numero: number
+  turno: Turno | null
   codigo_externo: string | null
   cliente_id: number | null
   canal_id: number
@@ -85,7 +87,7 @@ export interface Comanda {
 
 export type ComandaInput = Pick<
   Comanda,
-  | 'data' | 'numero' | 'codigo_externo' | 'cliente_id' | 'canal_id' | 'modalidade' | 'entregador_id'
+  | 'data' | 'numero' | 'turno' | 'codigo_externo' | 'cliente_id' | 'canal_id' | 'modalidade' | 'entregador_id'
   | 'valor_comanda' | 'taxa_entrega' | 'desconto' | 'valor_pago' | 'forma_pagamento_id'
   | 'maquina_id' | 'status' | 'observacao' | 'conferido'
 >
@@ -145,6 +147,22 @@ export interface Relatorio {
   }[]
   por_modalidade: { modalidade: Modalidade; comandas: number; valor_pago: number }[]
   por_dia_semana: { dow: number; comandas: number; valor_pago: number; dias: number }[]
+}
+
+export interface ResumoTurno {
+  turno: Turno | 'sem'
+  comandas: number
+  valor_comanda: number
+  taxa_entrega: number
+  desconto: number
+  valor_pago: number
+  valor_taxa: number
+  valor_liquido: number
+  ticket_medio: number
+  dinheiro: number
+  pendentes: number
+  nao_conferidas: number
+  por_forma: { forma: string; comandas: number; valor_pago: number }[]
 }
 
 export interface ResumoDia {

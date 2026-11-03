@@ -11,8 +11,9 @@ Sistema web para controle de vendas e fechamento de caixa da hamburgueria — su
 | **Login** | E-mail e senha, recuperação de senha por e-mail, troca de senha em *Minha conta* |
 | **Painel** | Faturamento, líquido, ticket médio, descontos, comissão das plataformas, vendas por dia, canal, forma, canal × forma, maquininhas, dia da semana, modalidade |
 | **Comandas** | Lançamento rápido (atalho **N**), valor pago calculado, taxa da máquina automática, filtros, divergências, pendentes, conferência em lote, exportar CSV |
-| **Fechamento de caixa** | Fundo de troco, sangria/suprimento/despesa, dinheiro esperado × contado, fechar o dia (trava edições) |
+| **Fechamento de caixa** | Fundo de troco, sangria/suprimento/despesa, dinheiro esperado × contado, **subtotais por turno** (manhã/tarde/noite), fechar o dia (trava edições) |
 | **Entregadores** | Acerto por período (entregas × taxas), registrar pagamento direto do caixa |
+| **DRE** (admin) | Demonstrativo de resultado do mês: provisório o tempo todo; o DRE definitivo só é gerado com todos os dias fechados e todas as comandas conferidas. Lançamento manual de folha, aluguel, impostos etc. |
 | **Recebíveis** | Agenda de quando cada venda na maquininha cai na conta (dias úteis) |
 | **Produtos** | Cardápio editável como planilha (preço, custo, margem e lucro por item), por categoria |
 | **Insumos** | Matéria-prima e embalagens: custo, estoque, mínimo, fornecedor; alerta de reposição |
@@ -53,6 +54,7 @@ As regras ficam **no banco** (Row Level Security + gatilhos), não só na tela �
    5. `supabase/migrations/20261029200000_leitor_notas.sql` (leitor de notas: chave da NF-e e memória de itens)
    6. `supabase/migrations/20261029300000_notas_pendentes.sql` (notas lidas ficam guardadas até a conferência)
    7. `supabase/migrations/20261031000000_mapa_clientes.sql` (mapa de clientes: CEP, cidade, posição e endereço da loja)
+   8. `supabase/migrations/20261103000000_turnos_dre.sql` (turnos manhã/tarde/noite nas comandas e DRE mensal)
 3. **Authentication → Sign In / Providers → Email**: **desligue "Allow new users to sign up"**.
    Assim só o admin cria contas. (Pode deixar "Confirm email" ligado.)
 
@@ -111,6 +113,8 @@ npm run dev
 ```
 
 ## Regras de negócio importantes
+- **Turnos:** toda comanda nova tem turno (manhã, tarde ou noite; o sistema sugere pelo relógio). O nº da comanda recomeça em cada turno e é único por **dia + turno**; o nº sugerido é o próximo livre do turno e pode ser trocado. Comandas antigas importadas da planilha ficam "sem turno".
+- **DRE:** só o admin vê. O botão "Gerar DRE" fica bloqueado com o motivo: *mês em andamento*, *falta fechamento* (dia com venda sem caixa fechado) ou *falta conciliação* (comanda não conferida ou pendente). CMV estimado pelas compras do mês (categorias de alimentos e bebidas); embalagens à parte; demais compras e despesas do caixa como despesas operacionais.
 - **Mapa de clientes:** usa OpenStreetMap (grátis, sem chave). A posição é buscada pelo endereço uma vez e fica gravada no cadastro; o CEP preenche rua, bairro e cidade. Sem rua encontrada, o pin vai para o centro do bairro/CEP (aproximado) e pode ser arrastado no cadastro. Clientes sem cidade usam a cidade da loja (botão 🍔 no mapa).
 - **Líquido = valor pago − taxa da maquininha.** O desconto já está dentro do valor pago, então não é subtraído de novo (a planilha antiga descontava duas vezes).
 - **Diferença** = comanda + entrega − desconto − pago. Em 99/iFood é a comissão da plataforma; no canal próprio, qualquer diferença aparece como **divergência** para conferência.

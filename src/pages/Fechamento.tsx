@@ -4,9 +4,9 @@ import { SeletorDia } from '../components/Periodo'
 import { Alerta, Botao, Cabecalho, Campo, Cartao, Carregando, Entrada, EntradaValor, Kpi, Modal, Selecao, Selo, useAvisos, Vazio } from '../components/ui'
 import { useAuth } from '../lib/auth'
 import { useCadastros } from '../lib/cadastros'
-import { brl, dataBR, dataHoraBR, diaSemana, hoje, lerValor, NOME_MOVIMENTO, num, valorParaCampo } from '../lib/format'
+import { brl, dataBR, dataHoraBR, diaSemana, hoje, lerValor, NOME_MOVIMENTO, NOME_TURNO, num, valorParaCampo } from '../lib/format'
 import { mensagemErro, supabase } from '../lib/supabase'
-import type { MovimentoCaixa, ResumoDia, TipoMovimento } from '../lib/types'
+import type { MovimentoCaixa, ResumoDia, ResumoTurno, TipoMovimento } from '../lib/types'
 
 export function Fechamento() {
   const { pode } = useAuth()
@@ -17,6 +17,7 @@ export function Fechamento() {
   const [dia, setDia] = useState(hoje())
   const [resumo, setResumo] = useState<ResumoDia | null>(null)
   const [movs, setMovs] = useState<MovimentoCaixa[]>([])
+  const [turnos, setTurnos] = useState<ResumoTurno[]>([])
   const [erro, setErro] = useState<string | null>(null)
   const [carregando, setCarregando] = useState(true)
 
@@ -28,10 +29,12 @@ export function Fechamento() {
 
   const carregar = useCallback(async () => {
     setCarregando(true)
-    const [r, m] = await Promise.all([
+    const [r, m, t] = await Promise.all([
       supabase.rpc('resumo_dia', { p_data: dia }),
       supabase.from('movimentos_caixa').select('*').eq('data', dia).order('criado_em'),
+      supabase.rpc('resumo_turnos', { p_inicio: dia, p_fim: dia }),
     ])
+    setTurnos((t.data as ResumoTurno[]) ?? [])
     if (r.error) setErro(mensagemErro(r.error))
     else {
       setErro(null)
@@ -133,6 +136,8 @@ export function Fechamento() {
           </div>
 
           <div className="grade-painel">
+            {turnos.length > 0 && <SubtotaisTurno turnos={turnos} />}
+
             <Cartao titulo="Recebimentos por forma">
               {resumo.resumo.por_forma.length === 0 ? <Vazio>Nenhuma comanda no dia.</Vazio> : (
                 <table className="tabela">
@@ -221,6 +226,70 @@ export function Fechamento() {
 
       <NovoMovimento aberto={movAberto} aoFechar={() => setMovAberto(false)} data={dia} aoSalvar={carregar} />
     </div>
+  )
+}
+
+/** Subtotais do dia por turno + recebimentos por forma em cada turno */
+function SubtotaisTurno({ turnos }: { turnos: ResumoTurno[] }) {
+  const total = (k: keyof ResumoTurno) => turnos.reduce((s, t) => s + Number(t[k]), 0)
+  const formas = [...new Set(turnos.flatMap((t) => t.por_forma.map((f) => f.forma)))]
+    .map((forma) => ({ forma, total: turnos.reduce((s, t) => s + Number(t.por_forma.find((f) => f.forma === forma)?.valor_pago ?? 0), 0) }))
+    .sort((a, b) => b.total - a.total)
+  const valorForma = (t: ResumoTurno, forma: string) => t.por_forma.find((f) => f.forma === forma)
+  return (
+    <Cartao titulo="Subtotais por turno" className="span-2">
+      <table className="tabela tabela-turnos">
+        <thead>
+          <tr><th>Turno</th><th className="n">Comandas</th><th className="n">Bruto</th><th className="n">Descontos</th><th className="n">Recebido</th><th className="n">Taxas</th><th className="n">Líquido</th><th className="n">Em dinheiro</th><th className="n">Ticket médio</th></tr>
+        </thead>
+        <tbody>
+          {turnos.map((t) => (
+            <tr key={t.turno}>
+              <td><span className={`turno-tag turno-${t.turno}`}>{NOME_TURNO[t.turno]}</span>
+                {t.pendentes > 0 && <small className="sub neg">{t.pendentes} pendente(s)</small>}</td>
+              <td className="n">{num(t.comandas)}</td>
+              <td className="n">{brl(Number(t.valor_comanda) + Number(t.taxa_entrega))}</td>
+              <td className="n">{Number(t.desconto) ? brl(t.desconto) : '—'}</td>
+              <td className="n forte">{brl(t.valor_pago)}</td>
+              <td className="n neg">{Number(t.valor_taxa) ? brl(t.valor_taxa) : '—'}</td>
+              <td className="n">{brl(t.valor_liquido)}</td>
+              <td className="n">{brl(t.dinheiro)}</td>
+              <td className="n">{brl(t.ticket_medio)}</td>
+            </tr>
+          ))}
+        </tbody>
+        {turnos.length > 1 && (
+          <tfoot>
+            <tr>
+              <td>Dia</td><td className="n">{num(total('comandas'))}</td>
+              <td className="n">{brl(total('valor_comanda') + total('taxa_entrega'))}</td><td className="n">{brl(total('desconto'))}</td>
+              <td className="n">{brl(total('valor_pago'))}</td><td className="n neg">{brl(total('valor_taxa'))}</td>
+              <td className="n">{brl(total('valor_liquido'))}</td><td className="n">{brl(total('dinheiro'))}</td>
+              <td className="n">{brl(total('comandas') ? total('valor_pago') / total('comandas') : 0)}</td>
+            </tr>
+          </tfoot>
+        )}
+      </table>
+
+      <h3 className="sub-titulo">Recebido por forma em cada turno</h3>
+      <table className="tabela tabela-turnos">
+        <thead>
+          <tr><th>Forma</th>{turnos.map((t) => <th key={t.turno} className="n">{NOME_TURNO[t.turno]}</th>)}{turnos.length > 1 && <th className="n">Dia</th>}</tr>
+        </thead>
+        <tbody>
+          {formas.map(({ forma, total: tf }) => (
+            <tr key={forma}>
+              <td>{forma}</td>
+              {turnos.map((t) => {
+                const v = valorForma(t, forma)
+                return <td key={t.turno} className="n">{v ? <>{brl(v.valor_pago)}<small className="sub">{v.comandas}x</small></> : '—'}</td>
+              })}
+              {turnos.length > 1 && <td className="n forte">{brl(tf)}</td>}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Cartao>
   )
 }
 
