@@ -9,6 +9,13 @@ import type { Comanda, ComandaInput, Modalidade, StatusComanda, Turno } from '..
 
 const TAXA_ENTREGA_PADRAO = '6,00'
 
+/** Forma a mais num pagamento dividido (a 1ª forma fica com o restante) */
+interface FormaExtra {
+  forma_pagamento_id: number | null
+  maquina_id: number | null
+  valor: string
+}
+
 interface Estado {
   data: string
   turno: Turno | null
@@ -25,6 +32,7 @@ interface Estado {
   pagoEditado: boolean
   forma_pagamento_id: number | null
   maquina_id: number | null
+  extras: FormaExtra[]
   status: StatusComanda
   observacao: string
   conferido: boolean
@@ -47,6 +55,7 @@ function deComanda(c: Comanda): Estado {
     pagoEditado: true,
     forma_pagamento_id: c.forma_pagamento_id,
     maquina_id: c.maquina_id,
+    extras: [],
     status: c.status,
     observacao: c.observacao ?? '',
     conferido: c.conferido,
@@ -70,6 +79,7 @@ function vazio(data: string, anterior?: Estado): Estado {
     pagoEditado: false,
     forma_pagamento_id: null,
     maquina_id: null,
+    extras: [],
     status: 'recebido',
     observacao: '',
     conferido: false,
@@ -104,6 +114,18 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
     setErro(null)
     if (comanda) {
       setF(deComanda(comanda))
+      supabase.from('comanda_pagamentos').select('forma_pagamento_id, maquina_id, valor').eq('comanda_id', comanda.id).then(({ data }) => {
+        const pg = ((data ?? []) as { forma_pagamento_id: number; maquina_id: number | null; valor: number }[])
+          .sort((a, b) => Number(b.valor) - Number(a.valor))
+        if (pg.length > 1) {
+          setF((s) => ({
+            ...s,
+            forma_pagamento_id: pg[0].forma_pagamento_id,
+            maquina_id: pg[0].maquina_id,
+            extras: pg.slice(1).map((p) => ({ forma_pagamento_id: p.forma_pagamento_id, maquina_id: p.maquina_id, valor: valorParaCampo(Number(p.valor)) })),
+          }))
+        }
+      })
       if (comanda.cliente_id) {
         supabase.from('clientes').select('id, nome, telefone, bairro').eq('id', comanda.cliente_id).maybeSingle()
           .then(({ data }) => data && setF((s) => ({ ...s, cliente: data as ClienteResumo })))
@@ -163,15 +185,26 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
     return disponiveis.find((m) => m.id === ultima)?.id ?? disponiveis[0]?.id ?? null
   }
 
-  const taxa = cad.taxaVigente(f.maquina_id, f.forma_pagamento_id, f.data)
   const pago = lerValor(f.valor_pago)
-  const valorTaxa = taxa ? Math.round(pago * Number(taxa.taxa_pct) * 100) / 100 : 0
+  const dividido = f.extras.length > 0
+  const somaExtras = f.extras.reduce((s, x) => s + lerValor(x.valor), 0)
+  const valorPrincipal = Math.round((pago - somaExtras) * 100) / 100
+  const taxa = cad.taxaVigente(f.maquina_id, f.forma_pagamento_id, f.data)
+  const taxaDe = (maq: number | null, forma: number | null, valor: number) => {
+    const t = cad.taxaVigente(maq, forma, f.data)
+    return t ? Math.round(valor * Number(t.taxa_pct) * 100) / 100 : 0
+  }
+  const valorTaxa = Math.round((taxaDe(f.maquina_id, f.forma_pagamento_id, valorPrincipal)
+    + f.extras.reduce((s, x) => s + taxaDe(x.maquina_id, x.forma_pagamento_id, lerValor(x.valor)), 0)) * 100) / 100
   const diferenca = Math.round((sugerido - pago) * 100) / 100
 
-  const maquinasDaForma = useMemo(
-    () => cad.maquinas.filter((m) => m.ativo && cad.taxas.some((t) => t.maquina_id === m.id && t.forma_pagamento_id === f.forma_pagamento_id)),
-    [cad.maquinas, cad.taxas, f.forma_pagamento_id],
-  )
+  const maquinasDe = (formaId: number | null) =>
+    cad.maquinas.filter((m) => m.ativo && cad.taxas.some((t) => t.maquina_id === m.id && t.forma_pagamento_id === formaId))
+  const maquinasDaForma = useMemo(() => maquinasDe(f.forma_pagamento_id), [cad.maquinas, cad.taxas, f.forma_pagamento_id])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const mudarExtra = (i: number, mud: Partial<FormaExtra>) =>
+    setF((s) => ({ ...s, extras: s.extras.map((x, k) => (k === i ? { ...x, ...mud } : x)) }))
+  const dividir = () => setF((s) => ({ ...s, extras: [...s.extras, { forma_pagamento_id: null, maquina_id: null, valor: '' }] }))
 
   const validar = (): string | null => {
     if (!f.data) return 'Informe a data.'
@@ -183,6 +216,12 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
     if (!lerValor(f.valor_comanda)) return 'Informe o valor da comanda.'
     if (f.status === 'recebido' && !f.forma_pagamento_id) return 'Escolha a forma de pagamento.'
     if (f.maquina_id && !taxa) return 'Essa máquina não tem taxa cadastrada para essa forma de pagamento.'
+    for (const [i, x] of f.extras.entries()) {
+      if (!x.forma_pagamento_id) return `Escolha a ${i + 2}ª forma de pagamento.`
+      if (!lerValor(x.valor)) return `Informe o valor da ${i + 2}ª forma de pagamento.`
+      if (x.maquina_id && !cad.taxaVigente(x.maquina_id, x.forma_pagamento_id, f.data)) return `A máquina da ${i + 2}ª forma não tem taxa cadastrada para essa forma.`
+    }
+    if (dividido && valorPrincipal <= 0) return `As outras formas somam ${brl(somaExtras)}, mais que o valor pago (${brl(pago)}).`
     return null
   }
 
@@ -226,10 +265,16 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
       conferido: gestor ? f.conferido : comanda?.conferido ?? false,
     }
 
+    const comMaquina = (formaId: number | null, maq: number | null) => (cad.formas.find((x) => x.id === formaId)?.aceita_maquina ? maq : null)
+    const pagamentos = f.forma_pagamento_id
+      ? [
+          { forma_pagamento_id: f.forma_pagamento_id, maquina_id: comMaquina(f.forma_pagamento_id, f.maquina_id), valor: valorPrincipal },
+          ...f.extras.map((x) => ({ forma_pagamento_id: x.forma_pagamento_id, maquina_id: comMaquina(x.forma_pagamento_id, x.maquina_id), valor: lerValor(x.valor) })),
+        ].filter((p) => p.valor > 0)
+      : []
+
     setSalvando(true)
-    const { error } = comanda
-      ? await supabase.from('comandas').update(dados).eq('id', comanda.id)
-      : await supabase.from('comandas').insert(dados)
+    const { error } = await supabase.rpc('salvar_comanda', { p_id: comanda?.id ?? null, p_comanda: dados, p_pagamentos: pagamentos })
     setSalvando(false)
 
     if (error) return setErro(mensagemErro(error))
@@ -332,7 +377,7 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
           </Campo>
         </div>
 
-        <Campo rotulo="Forma de pagamento">
+        <Campo rotulo={dividido ? `1ª forma de pagamento · ${brl(valorPrincipal)} (o restante)` : 'Forma de pagamento'}>
           <Opcoes nome="Forma de pagamento" valor={f.forma_pagamento_id} aoMudar={escolherForma}
             opcoes={cad.formas.filter((x) => x.ativo || x.id === f.forma_pagamento_id).map((x) => ({ valor: x.id, rotulo: x.nome }))} />
         </Campo>
@@ -344,8 +389,47 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
           </Campo>
         )}
 
+        {f.extras.map((x, i) => {
+          const fx = cad.formas.find((y) => y.id === x.forma_pagamento_id)
+          return (
+            <div className="forma-extra" key={i}>
+              <Campo rotulo={`${i + 2}ª forma`}>
+                <Selecao value={x.forma_pagamento_id ?? ''} aria-label={`${i + 2}ª forma`}
+                  onChange={(e) => { const id = Number(e.target.value) || null; mudarExtra(i, { forma_pagamento_id: id, maquina_id: id ? maquinaPadrao(id) : null }) }}>
+                  <option value="">Escolha…</option>
+                  {cad.formas.filter((y) => y.ativo || y.id === x.forma_pagamento_id).map((y) => <option key={y.id} value={y.id}>{y.nome}</option>)}
+                </Selecao>
+              </Campo>
+              {fx?.aceita_maquina ? (
+                <Campo rotulo="Máquina">
+                  <Selecao value={x.maquina_id ?? 0} aria-label={`Máquina da ${i + 2}ª forma`} onChange={(e) => mudarExtra(i, { maquina_id: Number(e.target.value) || null })}>
+                    <option value={0}>{fx.nome === 'Pix' ? 'Pix direto' : 'Sem máquina'}</option>
+                    {maquinasDe(fx.id).map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}
+                  </Selecao>
+                </Campo>
+              ) : <div />}
+              <Campo rotulo="Valor">
+                <EntradaValor valor={x.valor} aoMudar={(v) => mudarExtra(i, { valor: v })} aria-label={`Valor da ${i + 2}ª forma`} />
+              </Campo>
+              <button type="button" className="btn btn-fantasma btn-icone" title="Tirar esta forma" aria-label={`Tirar a ${i + 2}ª forma`}
+                onClick={() => setF((s) => ({ ...s, extras: s.extras.filter((_, k) => k !== i) }))}>✕</button>
+            </div>
+          )
+        })}
+        {f.forma_pagamento_id && f.status !== 'pendente' && (
+          <div className="dividir-linha">
+            <button type="button" className="link" onClick={dividir}>+ {dividido ? 'Mais uma forma' : 'Dividir com outra forma (ex.: parte no Pix, parte em dinheiro)'}</button>
+            {dividido && (
+              <span className={valorPrincipal <= 0 ? 'neg' : 'campo-dica'}>
+                {[{ n: cad.nomeForma(f.forma_pagamento_id), v: valorPrincipal }, ...f.extras.map((x) => ({ n: x.forma_pagamento_id ? cad.nomeForma(x.forma_pagamento_id) : '?', v: lerValor(x.valor) }))]
+                  .map((p) => `${p.n} ${brl(p.v)}`).join(' + ')} = {brl(pago)}
+              </span>
+            )}
+          </div>
+        )}
+
         <div className="resumo-comanda">
-          <div><span>Taxa da máquina</span><strong>{taxa ? `${pct(taxa.taxa_pct)} · ${brl(valorTaxa)}` : '—'}</strong></div>
+          <div><span>Taxa da máquina</span><strong>{dividido ? (valorTaxa ? brl(valorTaxa) : '—') : taxa ? `${pct(taxa.taxa_pct)} · ${brl(valorTaxa)}` : '—'}</strong></div>
           <div><span>Líquido</span><strong>{brl(f.status === 'cancelado' ? 0 : pago - valorTaxa)}</strong></div>
           <div>
             <span>{canal?.marketplace ? 'Comissão plataforma' : 'Diferença'}</span>

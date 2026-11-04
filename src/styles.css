@@ -568,3 +568,11 @@ select.entrada { width: auto; padding-right: 28px; }
   .dre-manuais { margin-top: 10px; }
   .dre-provisorio::after { color: rgba(0, 0, 0, .08); }
 }
+
+/* ---------- Pagamento dividido ---------- */
+.forma-extra { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: end; padding: 10px; border: 1px dashed var(--linha); border-radius: 10px; background: var(--superficie-2); }
+.forma-extra > button { margin-bottom: 2px; }
+.dividir-linha { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: -4px; }
+.dividir-linha .neg { font-weight: 600; }
+@media (max-width: 560px) { .forma-extra { grid-template-columns: 1fr 1fr; } .forma-extra > button { justify-self: end; } }
+.pagamento-dividido small.sub { display: block; color: var(--texto); font-size: 12px; }

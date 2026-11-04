@@ -7,6 +7,8 @@ import { baixarCsv, brl, dataBR, diaSemana, hoje, NOME_MODALIDADE, NOME_STATUS, 
 import { buscarTudo, mensagemErro, supabase } from '../lib/supabase'
 import type { Comanda, StatusComanda } from '../lib/types'
 
+type Pagamento = { comanda_id: number; forma_pagamento_id: number; maquina_id: number | null; valor: number }
+
 const ORDEM_TURNO: Record<string, number> = { noite: 3, tarde: 2, manha: 1 }
 import { ComandaForm } from './ComandaForm'
 
@@ -27,6 +29,7 @@ export function Comandas() {
   const [erro, setErro] = useState<string | null>(null)
   const [fechado, setFechado] = useState(false)
   const [clientes, setClientes] = useState<Map<number, string>>(new Map())
+  const [pagamentos, setPagamentos] = useState<Map<number, Pagamento[]>>(new Map())
 
   const [busca, setBusca] = useState('')
   const [canal, setCanal] = useState(0)
@@ -57,6 +60,15 @@ export function Comandas() {
         ;(data ?? []).forEach((c) => mapa.set(c.id as number, c.nome as string))
       }
       setClientes(mapa)
+      // formas de pagamento (só importam as comandas com mais de uma forma)
+      const pg = new Map<number, Pagamento[]>()
+      const idsCom = dados.map((c) => c.id)
+      for (let i = 0; i < idsCom.length; i += 300) {
+        const { data } = await supabase.from('comanda_pagamentos').select('comanda_id, forma_pagamento_id, maquina_id, valor').in('comanda_id', idsCom.slice(i, i + 300))
+        ;((data ?? []) as Pagamento[]).forEach((p) => pg.set(p.comanda_id, [...(pg.get(p.comanda_id) ?? []), p]))
+      }
+      pg.forEach((v, k) => { if (v.length < 2) pg.delete(k); else v.sort((a, b) => Number(b.valor) - Number(a.valor)) })
+      setPagamentos(pg)
       if (modo === 'dia') {
         const { data } = await supabase.from('fechamentos').select('fechado').eq('data', dia).maybeSingle()
         setFechado(Boolean(data?.fechado))
@@ -94,7 +106,7 @@ export function Comandas() {
     const t = busca.trim().toLowerCase()
     return lista.filter((c) => {
       if (canal && c.canal_id !== canal) return false
-      if (forma && c.forma_pagamento_id !== forma) return false
+      if (forma && c.forma_pagamento_id !== forma && !pagamentos.get(c.id)?.some((p) => p.forma_pagamento_id === forma)) return false
       if (turno && (c.turno ?? 'sem') !== turno) return false
       if (filtro === 'pendentes' && c.status !== 'pendente') return false
       if (filtro === 'divergentes' && !divergente(c)) return false
@@ -105,7 +117,7 @@ export function Comandas() {
       }
       return true
     }).sort((a, b) => (a.data === b.data ? (ORDEM_TURNO[b.turno ?? ''] ?? 0) - (ORDEM_TURNO[a.turno ?? ''] ?? 0) || b.numero - a.numero : a.data < b.data ? 1 : -1))
-  }, [lista, busca, canal, forma, turno, filtro, divergente, cad, clientes])
+  }, [lista, busca, canal, forma, turno, filtro, divergente, cad, clientes, pagamentos])
 
   const totais = useMemo(() => {
     const validas = filtradas.filter((c) => c.status !== 'cancelado')
@@ -143,7 +155,8 @@ export function Comandas() {
       ...filtradas.map((c) => [
         dataBR(c.data), NOME_TURNO[c.turno ?? 'sem'], c.numero, c.codigo_externo, c.cliente_id ? clientes.get(c.cliente_id) : '', cad.nomeCanal(c.canal_id), NOME_MODALIDADE[c.modalidade],
         c.entregador_id ? cad.nomeEntregador(c.entregador_id) : '', Number(c.valor_comanda), Number(c.taxa_entrega),
-        Number(c.desconto), Number(c.valor_pago), c.forma_pagamento_id ? cad.nomeForma(c.forma_pagamento_id) : '',
+        Number(c.desconto), Number(c.valor_pago),
+        pagamentos.get(c.id) ? pagamentos.get(c.id)!.map((p) => `${cad.nomeForma(p.forma_pagamento_id)} ${brl(p.valor)}`).join(' + ') : c.forma_pagamento_id ? cad.nomeForma(c.forma_pagamento_id) : '',
         c.maquina_id ? cad.nomeMaquina(c.maquina_id) : '', Number(c.taxa_pct), Number(c.valor_taxa), Number(c.valor_liquido),
         Number(c.diferenca), dataBR(c.data_prevista_recebimento), NOME_STATUS[c.status], c.conferido ? 'Sim' : 'Não', c.observacao,
       ]),
@@ -274,8 +287,18 @@ export function Comandas() {
                       {c.entregador_id && <small className="sub">{cad.nomeEntregador(c.entregador_id)}</small>}
                     </td>
                     <td>
-                      {c.forma_pagamento_id ? cad.nomeForma(c.forma_pagamento_id) : <span className="neg">—</span>}
-                      {c.maquina_id && <small className="sub">{cad.nomeMaquina(c.maquina_id)}</small>}
+                      {pagamentos.get(c.id) ? (
+                        <span className="pagamento-dividido" title="Pagamento dividido">
+                          {pagamentos.get(c.id)!.map((p, i) => (
+                            <small key={i} className="sub">{cad.nomeForma(p.forma_pagamento_id)} {brl(p.valor)}{p.maquina_id ? ` · ${cad.nomeMaquina(p.maquina_id)}` : ''}</small>
+                          ))}
+                        </span>
+                      ) : (
+                        <>
+                          {c.forma_pagamento_id ? cad.nomeForma(c.forma_pagamento_id) : <span className="neg">—</span>}
+                          {c.maquina_id && <small className="sub">{cad.nomeMaquina(c.maquina_id)}</small>}
+                        </>
+                      )}
                     </td>
                     <td className="n">{brl(c.valor_comanda)}</td>
                     <td className="n">{Number(c.taxa_entrega) ? brl(c.taxa_entrega) : ''}</td>
