@@ -589,3 +589,13 @@ select.entrada { width: auto; padding-right: 28px; }
 .formas-compra { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .forma-extra.forma-extra-compra { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto; }
 .span-2-col-forma { grid-column: span 2; min-width: 0; } @media (max-width: 720px) { .span-2-col-forma { grid-column: auto; } }
+@media print {
+  /* DRE: o demonstrativo é maior que uma página — pode continuar na seguinte (sem cortar linha ao meio) */
+  .grade-dre .cartao, .grade-dre .cartao.sem-padding { break-inside: auto; }
+  .tabela-dre thead { display: table-header-group; }
+  .tabela-dre tr { break-inside: avoid; }
+  .tabela-dre .dre-grupo { break-after: avoid; }
+  .dre-manuais h3, .dre-manuais .tabela tr { break-inside: avoid; break-after: auto; }
+  .dre-manuais .sub-titulo { break-after: avoid; }
+  .relatorio .kpis + .grade-dre { margin-top: 6px; }
+}
