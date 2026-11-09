@@ -58,6 +58,7 @@ export interface Comanda {
   data: string
   numero: number
   turno: Turno | null
+  empresa_id: number
   codigo_externo: string | null
   cliente_id: number | null
   canal_id: number
@@ -94,6 +95,7 @@ export type ComandaInput = Pick<
 
 export interface MovimentoCaixa {
   id: number
+  empresa_id: number
   data: string
   tipo: TipoMovimento
   valor: number
@@ -213,6 +215,7 @@ export type StatusCompra = 'a_pagar' | 'paga' | 'cancelada'
 
 export interface Compra {
   id: number
+  empresa_id: number
   data: string
   fornecedor_id: number | null
   fornecedor_nome: string | null
@@ -282,6 +285,7 @@ export interface RelatorioCompras {
   }[]
   por_dia: { data: string; total: number; compras: number }[]
   por_forma: { forma: string; total: number; compras: number }[]
+  por_empresa?: { empresa: string; total: number; compras: number }[]
 }
 
 export interface NotaMapeamento {

@@ -14,6 +14,8 @@ Sistema web para controle de vendas e fechamento de caixa da hamburgueria — su
 | **Fechamento de caixa** | Fundo de troco, sangria/suprimento/despesa, dinheiro esperado × contado, **subtotais por turno** (manhã/tarde/noite), fechar o dia (trava edições) |
 | **Entregadores** | Acerto por período (entregas × taxas), registrar pagamento direto do caixa |
 | **DRE** (admin) | Demonstrativo de resultado do mês: provisório o tempo todo; o DRE definitivo só é gerado com todos os dias fechados e todas as comandas conferidas. Lançamento manual de folha, aluguel, impostos etc. |
+| **Repasses** | Receitas sem comanda (franquia): iFood, 99, franqueadora… por CNPJ, entram no DRE |
+| **Empresas (CNPJ)** (admin) | Cadastro dos CNPJs; loja com comandas × franquia só com repasses |
 | **Recebíveis** | Agenda de quando cada venda na maquininha cai na conta (dias úteis) |
 | **Produtos** | Cardápio editável como planilha (preço, custo, margem e lucro por item), por categoria |
 | **Insumos** | Matéria-prima e embalagens: custo, estoque, mínimo, fornecedor; alerta de reposição |
@@ -56,6 +58,7 @@ As regras ficam **no banco** (Row Level Security + gatilhos), não só na tela �
    7. `supabase/migrations/20261031000000_mapa_clientes.sql` (mapa de clientes: CEP, cidade, posição e endereço da loja)
    8. `supabase/migrations/20261103000000_turnos_dre.sql` (turnos manhã/tarde/noite nas comandas e DRE mensal)
    9. `supabase/migrations/20261104000000_pagamento_dividido.sql` (comanda paga com mais de uma forma)
+  10. `supabase/migrations/20261109000000_empresas_repasses.sql` (empresas/CNPJs, repasses da franquia, nº de comanda por plataforma, compra paga com mais de uma forma)
 3. **Authentication → Sign In / Providers → Email**: **desligue "Allow new users to sign up"**.
    Assim só o admin cria contas. (Pode deixar "Confirm email" ligado.)
 
@@ -114,6 +117,9 @@ npm run dev
 ```
 
 ## Regras de negócio importantes
+- **Vários CNPJs:** toda receita e despesa pertence a uma empresa. Comandas e caixa são da loja com comandas (Top Burguer). Compras, despesas do caixa, despesas manuais do DRE e repasses escolhem o CNPJ; na leitura de nota XML o CNPJ vem do destinatário. O DRE oficial é gerado por CNPJ; o consolidado é só consulta. Dados pessoais dos titulares (CPF, telefone, e-mail) **não** ficam no código — preencha pela tela Empresas.
+- **Nº de comanda:** único por dia + turno + plataforma (a comanda 12 pode existir no MultiPedidos, no 99 e no iFood no mesmo turno).
+- **Compras com várias formas:** a compra pode ser paga em Pix + dinheiro, dinheiro + cartão etc. A despesa no fechamento de caixa é só a parte em dinheiro. Também vale ao quitar uma conta a pagar.
 - **Pagamento dividido:** a comanda pode ser paga com mais de uma forma (ex.: Pix + dinheiro). Cada forma tem valor, máquina e taxa próprios; a 1ª forma fica com o restante do valor pago. Fechamento (dinheiro da gaveta), painel, recebíveis e relatórios somam cada forma separadamente.
 - **Turnos:** toda comanda nova tem turno (manhã, tarde ou noite; o sistema sugere pelo relógio). O nº da comanda recomeça em cada turno e é único por **dia + turno**; o nº sugerido é o próximo livre do turno e pode ser trocado. Comandas antigas importadas da planilha ficam "sem turno".
 - **DRE:** só o admin vê. O botão "Gerar DRE" fica bloqueado com o motivo: *mês em andamento*, *falta fechamento* (dia com venda sem caixa fechado) ou *falta conciliação* (comanda não conferida ou pendente). CMV estimado pelas compras do mês (categorias de alimentos e bebidas); embalagens à parte; demais compras e despesas do caixa como despesas operacionais.

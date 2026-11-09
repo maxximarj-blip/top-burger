@@ -20,6 +20,7 @@ interface Estado {
   data: string
   turno: Turno | null
   numero: string
+  numeroDigitado?: boolean
   codigo_externo: string
   cliente: ClienteResumo | null
   canal_id: number | null
@@ -103,10 +104,10 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
 
   const set = <K extends keyof Estado>(k: K, v: Estado[K]) => setF((s) => ({ ...s, [k]: v }))
 
-  // sugere o próximo nº livre do turno (o usuário pode trocar)
-  const buscarNumero = async (data: string, turno: Turno | null) => {
-    const { data: n } = await supabase.rpc('proximo_numero', { p_data: data, p_turno: turno })
-    if (typeof n === 'number') setF((s) => (s.data === data && s.turno === turno ? { ...s, numero: String(n) } : s))
+  // sugere o próximo nº livre do turno + plataforma (o usuário pode trocar)
+  const buscarNumero = async (data: string, turno: Turno | null, canal: number | null) => {
+    const { data: n } = await supabase.rpc('proximo_numero', { p_data: data, p_turno: turno, p_canal: canal })
+    if (typeof n === 'number') setF((s) => (s.data === data && s.turno === turno && s.canal_id === canal && !s.numeroDigitado ? { ...s, numero: String(n) } : s))
   }
 
   useEffect(() => {
@@ -134,7 +135,7 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
     else {
       const novo = vazio(dataPadrao)
       setF(novo)
-      buscarNumero(dataPadrao, novo.turno)
+      buscarNumero(dataPadrao, novo.turno, novo.canal_id)
     }
   }, [aberto, comanda, dataPadrao])
 
@@ -155,6 +156,7 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
       modalidade: s.modalidade ?? (c?.marketplace ? 'delivery_plataforma' : null),
       forma_pagamento_id: s.forma_pagamento_id ?? (c?.marketplace ? cad.formas.find((x) => x.online)?.id ?? null : null),
     }))
+    if (!comanda) buscarNumero(f.data, f.turno, id)
   }
 
   const escolherModalidade = (m: Modalidade) => {
@@ -283,7 +285,7 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
     aoSalvar()
     if (continuar && !comanda) {
       setF((s) => vazio(s.data, s))
-      buscarNumero(f.data, f.turno)
+      buscarNumero(f.data, f.turno, f.canal_id)
     } else {
       aoFechar()
     }
@@ -325,11 +327,11 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
 
         <div className="grade-3">
           <Campo rotulo="Data">
-            <Entrada type="date" value={f.data} onChange={(e) => { set('data', e.target.value); if (!comanda) buscarNumero(e.target.value, f.turno) }} />
+            <Entrada type="date" value={f.data} onChange={(e) => { set('data', e.target.value); if (!comanda) buscarNumero(e.target.value, f.turno, f.canal_id) }} />
           </Campo>
-          <Campo rotulo="Nº comanda" dica={comanda ? 'Pode corrigir' : 'Sugerido: próximo do turno — pode trocar'}>
+          <Campo rotulo="Nº comanda" dica={comanda ? 'Pode corrigir' : 'Sugerido: próximo do turno e da plataforma — pode trocar'}>
             <Entrada inputMode="numeric" value={f.numero} aria-label="Nº comanda" onFocus={(e) => e.target.select()}
-              onChange={(e) => set('numero', e.target.value.replace(/\D/g, ''))} />
+              onChange={(e) => { const v = e.target.value.replace(/\D/g, ''); setF((s) => ({ ...s, numero: v, numeroDigitado: v !== '' })) }} />
           </Campo>
           <Campo rotulo="Nº pedido na plataforma" dica={canal?.marketplace ? 'Ex.: 562006' : 'Opcional'}>
             <Entrada value={f.codigo_externo} onChange={(e) => set('codigo_externo', e.target.value)} />
@@ -337,7 +339,7 @@ export function ComandaForm({ aberto, aoFechar, aoSalvar, comanda, dataPadrao }:
         </div>
 
         <Campo rotulo="Turno" dica={comanda && !comanda.turno && !f.turno ? 'Comanda antiga, lançada sem turno' : undefined}>
-          <Opcoes nome="Turno" valor={f.turno} aoMudar={(t) => { set('turno', t); if (!comanda) buscarNumero(f.data, t) }}
+          <Opcoes nome="Turno" valor={f.turno} aoMudar={(t) => { set('turno', t); if (!comanda) buscarNumero(f.data, t, f.canal_id) }}
             opcoes={TURNOS.map((t) => ({ valor: t, rotulo: NOME_TURNO[t] }))} />
         </Campo>
 

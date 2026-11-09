@@ -9,6 +9,8 @@ import type { Compra, CompraItem, Fornecedor, Insumo, RelatorioCompras } from '.
 import { CompraForm, FORMAS_COMPRA } from './CompraForm'
 import { ImportarNota } from './ImportarNota'
 import { recarregarPendentes, useFilaNotas } from '../lib/filaNotas'
+import { SeletorEmpresa, TagEmpresa, useEmpresas } from '../lib/empresas'
+import { FormasCompra, montarFormas, validarFormas, type ParteForma } from '../components/FormasCompra'
 
 type Aba = 'lancamentos' | 'pagar' | 'relatorio'
 const CORES = ['#e0912a', '#c8402a', '#5b7f3a', '#3f6e8c', '#8a5a9e', '#9c6b3c', '#4f8f86', '#b5874a', '#6d6d6d']
@@ -65,6 +67,8 @@ export function Compras() {
   const notasPendentes = filaNotas.pendentes.length + filaNotas.lendo.length
   const [versao, setVersao] = useState(0)
   const [aPagar, setAPagar] = useState<Compra[]>([])
+  const emp = useEmpresas()
+  const [empresa, setEmpresa] = useState(0)   // 0 = todas
 
   const carregarAPagar = useCallback(async () => {
     const { data } = await supabase.from('compras').select('*').eq('status', 'a_pagar').order('vencimento')
@@ -103,6 +107,13 @@ export function Compras() {
         </Alerta>
       )}
 
+      {emp.varias && (
+        <div className="filtro-empresa nao-imprimir">
+          <span className="campo-dica">Empresa:</span>
+          <SeletorEmpresa valor={empresa} aoMudar={setEmpresa} todas aria-label="Filtrar por empresa" />
+        </div>
+      )}
+
       <div className="abas nao-imprimir">
         <button className={aba === 'lancamentos' ? 'ativo' : ''} onClick={() => setAba('lancamentos')}>Lançamentos</button>
         <button className={aba === 'pagar' ? 'ativo' : ''} onClick={() => setAba('pagar')}>
@@ -111,9 +122,9 @@ export function Compras() {
         <button className={aba === 'relatorio' ? 'ativo' : ''} onClick={() => setAba('relatorio')}>Relatório do mês</button>
       </div>
 
-      {aba === 'lancamentos' && <Lancamentos mes={mes} setMes={setMes} fornecedores={base.fornecedores} abrir={abrir} versao={versao} />}
-      {aba === 'pagar' && <ContasAPagar lista={aPagar} fornecedores={base.fornecedores} abrir={abrir} aoMudar={() => setVersao((v) => v + 1)} />}
-      {aba === 'relatorio' && <Relatorio mes={mes} setMes={setMes} fornecedores={base.fornecedores} versao={versao} />}
+      {aba === 'lancamentos' && <Lancamentos mes={mes} setMes={setMes} fornecedores={base.fornecedores} abrir={abrir} versao={versao} empresa={empresa} />}
+      {aba === 'pagar' && <ContasAPagar lista={empresa ? aPagar.filter((c) => c.empresa_id === empresa) : aPagar} fornecedores={base.fornecedores} abrir={abrir} aoMudar={() => setVersao((v) => v + 1)} />}
+      {aba === 'relatorio' && <Relatorio mes={mes} setMes={setMes} fornecedores={base.fornecedores} versao={versao} empresa={empresa} nomeEmpresa={empresa ? emp.nome(empresa) : emp.varias ? 'Todas as empresas' : emp.nome(emp.padrao) || 'Top Burguer'} />}
 
       <ImportarNota
         aberto={importar}
@@ -139,8 +150,8 @@ export function Compras() {
 // =====================================================================
 // Lançamentos
 // =====================================================================
-function Lancamentos({ mes, setMes, fornecedores, abrir, versao }: {
-  mes: string; setMes: (m: string) => void; fornecedores: Fornecedor[]; abrir: (c: Compra) => void; versao: number
+function Lancamentos({ mes, setMes, fornecedores, abrir, versao, empresa }: {
+  mes: string; setMes: (m: string) => void; fornecedores: Fornecedor[]; abrir: (c: Compra) => void; versao: number; empresa: number
 }) {
   const [lista, setLista] = useState<Compra[]>([])
   const [itens, setItens] = useState<Map<number, CompraItem[]>>(new Map())
@@ -156,7 +167,8 @@ function Lancamentos({ mes, setMes, fornecedores, abrir, versao }: {
     ;(async () => {
       try {
         const cs = await buscarTudo<Compra>((de, ate) =>
-          supabase.from('compras').select('*').gte('data', mes).lte('data', fimMes(mes)).order('data', { ascending: false }).order('id', { ascending: false }).range(de, ate))
+          (empresa ? supabase.from('compras').select('*').eq('empresa_id', empresa) : supabase.from('compras').select('*'))
+            .gte('data', mes).lte('data', fimMes(mes)).order('data', { ascending: false }).order('id', { ascending: false }).range(de, ate))
         const mapa = new Map<number, CompraItem[]>()
         const ids = cs.map((c) => c.id)
         for (let i = 0; i < ids.length; i += 150) {
@@ -173,7 +185,7 @@ function Lancamentos({ mes, setMes, fornecedores, abrir, versao }: {
       if (ativo) setCarregando(false)
     })()
     return () => { ativo = false }
-  }, [mes, versao])
+  }, [mes, versao, empresa])
 
   const filtradas = useMemo(() => {
     const t = busca.trim().toLowerCase()
@@ -245,7 +257,7 @@ function Lancamentos({ mes, setMes, fornecedores, abrir, versao }: {
                   return (
                     <tr key={c.id} className={c.status === 'cancelada' ? 'cancelada' : ''} onClick={() => abrir(c)}>
                       <td>{dataBR(c.data)}<small className="sub">#{c.id}</small></td>
-                      <td className="forte">{nomeFornecedor(c, fornecedores)}{!c.fornecedor_id && <small className="sub">avulso</small>}</td>
+                      <td className="forte">{nomeFornecedor(c, fornecedores)}{!c.fornecedor_id && <small className="sub">avulso</small>}<small className="sub"><TagEmpresa id={c.empresa_id} /></small></td>
                       <td className="celula-itens">
                         {its.slice(0, 2).map((i) => `${qtd(i.quantidade)} ${i.unidade} ${i.descricao}`).join(' · ')}
                         {its.length > 2 && <small className="sub">+ {its.length - 2} {its.length - 2 === 1 ? 'item' : 'itens'}</small>}
@@ -276,6 +288,7 @@ function ContasAPagar({ lista, fornecedores, abrir, aoMudar }: {
   const [pagando, setPagando] = useState<Compra | null>(null)
   const [dataPg, setDataPg] = useState(hoje())
   const [formaPg, setFormaPg] = useState('')
+  const [extrasPg, setExtrasPg] = useState<ParteForma[]>([])
   const [salvando, setSalvando] = useState(false)
   const h = hoje()
   const em7 = somarDias(h, 7)
@@ -289,8 +302,14 @@ function ContasAPagar({ lista, fornecedores, abrir, aoMudar }: {
 
   const pagar = async () => {
     if (!pagando) return
+    const total = Number(pagando.total)
+    const ef = validarFormas(total, formaPg, extrasPg)
+    if (ef) return avisar(ef, 'erro')
     setSalvando(true)
-    const { error } = await supabase.rpc('pagar_compra', { p_id: pagando.id, p_data: dataPg, p_forma: formaPg || null })
+    const { error } = await supabase.rpc('pagar_compra', {
+      p_id: pagando.id, p_data: dataPg, p_forma: formaPg || null,
+      p_pagamentos: extrasPg.length ? montarFormas(total, formaPg, extrasPg).pagamentos : null,
+    })
     setSalvando(false)
     if (error) return avisar(mensagemErro(error), 'erro')
     avisar(`Pagamento de ${brl(pagando.total)} registrado.`)
@@ -316,12 +335,12 @@ function ContasAPagar({ lista, fornecedores, abrir, aoMudar }: {
               {g.itens.map((c) => (
                 <tr key={c.id} onClick={() => abrir(c)}>
                   <td className="forte">{dataBR(c.vencimento)}<small className="sub">{c.vencimento! < h ? `${Math.round((Date.parse(h) - Date.parse(c.vencimento!)) / 864e5)} dia(s) de atraso` : c.vencimento === h ? 'hoje' : `em ${Math.round((Date.parse(c.vencimento!) - Date.parse(h)) / 864e5)} dia(s)`}</small></td>
-                  <td>{nomeFornecedor(c, fornecedores)}{c.numero_nota && <small className="sub">NF {c.numero_nota}</small>}</td>
+                  <td>{nomeFornecedor(c, fornecedores)}{c.numero_nota && <small className="sub">NF {c.numero_nota}</small>}<small className="sub"><TagEmpresa id={c.empresa_id} /></small></td>
                   <td>#{c.id} de {dataBR(c.data, true)}</td>
                   <td>{c.forma_pagamento || '—'}</td>
                   <td className="n forte">{brl(c.total)}</td>
                   <td className="n" onClick={(e) => e.stopPropagation()}>
-                    <Botao variante="primario" onClick={() => { setPagando(c); setDataPg(hoje()); setFormaPg(c.forma_pagamento ?? '') }}>Pagar</Botao>
+                    <Botao variante="primario" onClick={() => { setPagando(c); setDataPg(hoje()); setExtrasPg([]); setFormaPg(FORMAS_COMPRA.includes(c.forma_pagamento ?? '') ? c.forma_pagamento! : '') }}>Pagar</Botao>
                   </td>
                 </tr>
               ))}
@@ -336,15 +355,9 @@ function ContasAPagar({ lista, fornecedores, abrir, aoMudar }: {
           <>
             <p><strong>{nomeFornecedor(pagando, fornecedores)}</strong> — compra #{pagando.id}, vencimento {dataBR(pagando.vencimento)}</p>
             <p className="valor-pagar">{brl(pagando.total)}</p>
-            <div className="grade-2">
-              <Campo rotulo="Pago em"><Entrada type="date" value={dataPg} onChange={(e) => setDataPg(e.target.value)} /></Campo>
-              <Campo rotulo="Forma">
-                <Selecao value={formaPg} onChange={(e) => setFormaPg(e.target.value)}>
-                  <option value="">—</option>
-                  {FORMAS_COMPRA.map((f) => <option key={f}>{f}</option>)}
-                </Selecao>
-              </Campo>
-            </div>
+            <Campo rotulo="Pago em"><Entrada type="date" value={dataPg} onChange={(e) => setDataPg(e.target.value)} /></Campo>
+            <FormasCompra formas={FORMAS_COMPRA} total={Number(pagando.total)} forma={formaPg} aoMudarForma={setFormaPg} extras={extrasPg} aoMudarExtras={setExtrasPg}
+              rotulo={pagando.forma_pagamento && !formaPg ? `Forma (vazio = manter: ${pagando.forma_pagamento})` : 'Forma'} />
           </>
         )}
       </Modal>
@@ -355,7 +368,7 @@ function ContasAPagar({ lista, fornecedores, abrir, aoMudar }: {
 // =====================================================================
 // Relatório do mês
 // =====================================================================
-function Relatorio({ mes, setMes, fornecedores, versao }: { mes: string; setMes: (m: string) => void; fornecedores: Fornecedor[]; versao: number }) {
+function Relatorio({ mes, setMes, fornecedores, versao, empresa, nomeEmpresa }: { mes: string; setMes: (m: string) => void; fornecedores: Fornecedor[]; versao: number; empresa: number; nomeEmpresa: string }) {
   const { perfil } = useAuth()
   const [r, setR] = useState<RelatorioCompras | null>(null)
   const [compras, setCompras] = useState<Compra[]>([])
@@ -367,8 +380,9 @@ function Relatorio({ mes, setMes, fornecedores, versao }: { mes: string; setMes:
     let ativo = true
     setCarregando(true)
     Promise.all([
-      supabase.rpc('relatorio_compras', { p_inicio: mes, p_fim: fim }),
-      supabase.from('compras').select('*').gte('data', mes).lte('data', fim).neq('status', 'cancelada').order('data').order('id'),
+      supabase.rpc('relatorio_compras', { p_inicio: mes, p_fim: fim, p_empresa: empresa || null }),
+      (empresa ? supabase.from('compras').select('*').eq('empresa_id', empresa) : supabase.from('compras').select('*'))
+        .gte('data', mes).lte('data', fim).neq('status', 'cancelada').order('data').order('id'),
     ]).then(([rel, cs]) => {
       if (!ativo) return
       if (rel.error) setErro(mensagemErro(rel.error))
@@ -377,7 +391,7 @@ function Relatorio({ mes, setMes, fornecedores, versao }: { mes: string; setMes:
       setCarregando(false)
     })
     return () => { ativo = false }
-  }, [mes, fim, versao])
+  }, [mes, fim, versao, empresa])
 
   if (carregando && !r) return <Carregando />
   if (erro) return <Alerta tom="erro">{erro}</Alerta>
@@ -413,7 +427,7 @@ function Relatorio({ mes, setMes, fornecedores, versao }: { mes: string; setMes:
 
       <div className="so-impressao cabecalho-impressao">
         <div>
-          <strong>Top Burguer</strong>
+          <strong>{nomeEmpresa}</strong>
           <h2>Relatório de compras — {mesExtenso(mes)}</h2>
         </div>
         <span>Período {dataBR(mes)} a {dataBR(fim)}<br />Emitido em {dataHoraBR(new Date().toISOString())} por {perfil?.nome}</span>
@@ -507,6 +521,16 @@ function Relatorio({ mes, setMes, fornecedores, versao }: { mes: string; setMes:
                   {r.por_forma.map((f) => <tr key={f.forma}><td>{f.forma}</td><td className="n">{f.compras}x</td><td className="n">{brl(f.total)}</td></tr>)}
                 </tbody>
               </table>
+              {!empresa && (r.por_empresa?.length ?? 0) > 1 && (
+                <>
+                  <h3 className="sub-titulo">Por empresa (CNPJ)</h3>
+                  <table className="tabela">
+                    <tbody>
+                      {r.por_empresa!.map((e) => <tr key={e.empresa}><td>{e.empresa}</td><td className="n">{e.compras}x</td><td className="n">{brl(e.total)}</td></tr>)}
+                    </tbody>
+                  </table>
+                </>
+              )}
             </Cartao>
 
             <Cartao titulo="Resumo">

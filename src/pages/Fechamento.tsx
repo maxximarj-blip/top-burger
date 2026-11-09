@@ -6,6 +6,7 @@ import { useAuth } from '../lib/auth'
 import { useCadastros } from '../lib/cadastros'
 import { brl, dataBR, dataHoraBR, diaSemana, hoje, lerValor, NOME_MOVIMENTO, NOME_TURNO, num, valorParaCampo } from '../lib/format'
 import { mensagemErro, supabase } from '../lib/supabase'
+import { SeletorEmpresa, TagEmpresa, useEmpresas } from '../lib/empresas'
 import type { MovimentoCaixa, ResumoDia, ResumoTurno, TipoMovimento } from '../lib/types'
 
 export function Fechamento() {
@@ -13,6 +14,8 @@ export function Fechamento() {
   const cad = useCadastros()
   const { avisar, confirmar } = useAvisos()
   const gestor = pode('admin', 'gerente')
+  const emp = useEmpresas()
+  const empresaCaixa = emp.ativas.find((e) => e.controla_comandas)?.id ?? emp.padrao
 
   const [dia, setDia] = useState(hoje())
   const [resumo, setResumo] = useState<ResumoDia | null>(null)
@@ -211,7 +214,7 @@ export function Fechamento() {
                       <tr key={m.id}>
                         <td>{dataHoraBR(m.criado_em).split(' ')[1]}</td>
                         <td><Selo tom={m.tipo === 'suprimento' ? 'ok' : 'neutro'}>{NOME_MOVIMENTO[m.tipo]}</Selo></td>
-                        <td>{m.descricao}{m.entregador_id && <small className="sub">{cad.nomeEntregador(m.entregador_id)}</small>}</td>
+                        <td>{m.descricao}{m.entregador_id && <small className="sub">{cad.nomeEntregador(m.entregador_id)}</small>}{m.empresa_id !== empresaCaixa && <small className="sub"><TagEmpresa id={m.empresa_id} /></small>}</td>
                         <td className={`n ${m.tipo === 'suprimento' ? '' : 'neg'}`}>{m.tipo === 'suprimento' ? '+' : '−'} {brl(m.valor)}</td>
                         <td className="n">{gestor && !fechado && <button className="link" onClick={() => excluirMov(m)}>excluir</button>}</td>
                       </tr>
@@ -304,6 +307,9 @@ export function NovoMovimento({ aberto, aoFechar, data, aoSalvar, inicial }: {
   const [descricao, setDescricao] = useState('')
   const [entregador, setEntregador] = useState(0)
   const [dataMov, setDataMov] = useState(data)
+  const emp = useEmpresas()
+  const empresaCaixa = emp.ativas.find((e) => e.controla_comandas)?.id ?? emp.padrao
+  const [empresa, setEmpresa] = useState(0)
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
 
@@ -314,6 +320,7 @@ export function NovoMovimento({ aberto, aoFechar, data, aoSalvar, inicial }: {
     setDescricao(inicial?.descricao ?? '')
     setEntregador(inicial?.entregador_id ?? 0)
     setDataMov(data)
+    setEmpresa(0)
     setErro(null)
   }, [aberto, inicial, data])
 
@@ -325,6 +332,7 @@ export function NovoMovimento({ aberto, aoFechar, data, aoSalvar, inicial }: {
     setSalvando(true)
     const { error } = await supabase.from('movimentos_caixa').insert({
       data: dataMov, tipo, valor: lerValor(valor), descricao: desc,
+      empresa_id: tipo === 'despesa' && empresa ? empresa : empresaCaixa,
       entregador_id: tipo === 'pagamento_entregador' ? entregador : null,
     })
     setSalvando(false)
@@ -352,6 +360,11 @@ export function NovoMovimento({ aberto, aoFechar, data, aoSalvar, inicial }: {
             <option value={0}>Escolha…</option>
             {cad.entregadores.filter((e) => e.ativo).map((e) => <option key={e.id} value={e.id}>{e.nome}</option>)}
           </Selecao>
+        </Campo>
+      )}
+      {tipo === 'despesa' && emp.varias && (
+        <Campo rotulo="Despesa de qual empresa (CNPJ)?" dica="O dinheiro sai desta gaveta; a despesa entra no DRE do CNPJ escolhido">
+          <SeletorEmpresa valor={empresa || empresaCaixa} aoMudar={setEmpresa} aria-label="Empresa da despesa" />
         </Campo>
       )}
       <Campo rotulo="Valor"><EntradaValor valor={valor} aoMudar={setValor} /></Campo>

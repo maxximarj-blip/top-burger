@@ -19,6 +19,8 @@ const I = {
   insumo: <path d="M4 8l8-4 8 4-8 4zM4 8v8l8 4 8-4V8M12 12v8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />,
   produto: <path d="M4 11c0-4 3.6-7 8-7s8 3 8 7zM3 14h18M4 17h16c0 2-1.5 3-3 3H7c-1.5 0-3-1-3-3z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />,
   compras: <path d="M3 4h2l2.4 11h11l2-8H6.2M10 20a1 1 0 1 0 0-.01M18 20a1 1 0 1 0 0-.01" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
+  repasse: <path d="M3 12h13M12 7l5 5-5 5M21 4v16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
+  empresa: <path d="M4 21V5l8-3v19M12 9h8v12M7 8h2M7 12h2M7 16h2M15 13h2M15 17h2M2 21h20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />,
   dre: <path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-6M20 16v-9" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />,
   historico: <path d="M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5M12 7v5l3 2" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
 }
@@ -34,8 +36,10 @@ const MENU: { para: string; rotulo: string; icone: ReactNode; papeis: Papel[]; s
   { para: '/compras', rotulo: 'Compras', icone: I.compras, papeis: ['admin', 'gerente'], secao: 'Financeiro' },
   { para: '/entregadores', rotulo: 'Entregadores', icone: I.moto, papeis: ['admin', 'gerente'] },
   { para: '/recebiveis', rotulo: 'Recebíveis', icone: I.calendario, papeis: ['admin', 'gerente'] },
+  { para: '/repasses', rotulo: 'Repasses', icone: I.repasse, papeis: ['admin', 'gerente'] },
   { para: '/dre', rotulo: 'DRE', icone: I.dre, papeis: ['admin'] },
   { para: '/cadastros', rotulo: 'Configurações', icone: I.config, papeis: ['admin', 'gerente'], secao: 'Sistema' },
+  { para: '/empresas', rotulo: 'Empresas (CNPJ)', icone: I.empresa, papeis: ['admin'] },
   { para: '/usuarios', rotulo: 'Usuários', icone: I.usuarios, papeis: ['admin'] },
   { para: '/auditoria', rotulo: 'Auditoria', icone: I.historico, papeis: ['admin'] },
 ]

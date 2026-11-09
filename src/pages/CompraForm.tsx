@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import { FormasCompra, montarFormas, validarFormas, type ParteForma } from '../components/FormasCompra'
 import { Alerta, Botao, Campo, Entrada, EntradaValor, Modal, Opcoes, Selecao, useAvisos } from '../components/ui'
+import { empresaPreferida, lembrarEmpresa, SeletorEmpresa, useEmpresas } from '../lib/empresas'
 import { brl, hoje, lerValor, somarDias, valorParaCampo } from '../lib/format'
 import { mensagemErro, supabase } from '../lib/supabase'
 import type { Compra, CompraItem, Fornecedor, Insumo, StatusCompra } from '../lib/types'
@@ -66,6 +68,9 @@ export function CompraForm({ aberto, compra, itensIniciais, fornecedores, insumo
   const [desconto, setDesconto] = useState('')
   const [status, setStatus] = useState<StatusCompra>('paga')
   const [forma, setForma] = useState('Pix')
+  const [extras, setExtras] = useState<ParteForma[]>([])
+  const [empresa, setEmpresa] = useState(0)
+  const emp = useEmpresas()
   const [vencimento, setVencimento] = useState('')
   const [dataPagamento, setDataPagamento] = useState('')
   const [lancarCaixa, setLancarCaixa] = useState(false)
@@ -77,7 +82,16 @@ export function CompraForm({ aberto, compra, itensIniciais, fornecedores, insumo
     if (!aberto) return
     setErro(null)
     setLancarCaixa(false)
+    setExtras([])
     if (compra) {
+      setEmpresa(compra.empresa_id)
+      supabase.from('compra_pagamentos').select('forma, valor').eq('compra_id', compra.id).then(({ data }) => {
+        const pg = ((data ?? []) as { forma: string; valor: number }[]).sort((a, b) => Number(b.valor) - Number(a.valor))
+        if (pg.length) {
+          setForma(pg[0].forma)
+          setExtras(pg.slice(1).map((p) => ({ forma: p.forma, valor: valorParaCampo(Number(p.valor)) })))
+        }
+      })
       setData(compra.data)
       setFornecedorId(compra.fornecedor_id ?? -1)
       setFornecedorNome(compra.fornecedor_nome ?? '')
@@ -108,12 +122,16 @@ export function CompraForm({ aberto, compra, itensIniciais, fornecedores, insumo
       setDesconto('')
       setStatus('paga')
       setForma('Pix')
+      setEmpresa(empresaPreferida(emp.ativas))
       setVencimento('')
       setDataPagamento('')
       setObs('')
       setLinhas([novaLinha()])
     }
-  }, [aberto, compra, itensIniciais])
+  }, [aberto, compra, itensIniciais])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // lista de empresas pode chegar depois de abrir
+  useEffect(() => { if (aberto && !compra && !empresa && emp.ativas.length) setEmpresa(empresaPreferida(emp.ativas)) }, [aberto, compra, empresa, emp.ativas])
 
   const fornecedor = fornecedores.find((f) => f.id === fornecedorId)
 
@@ -146,6 +164,7 @@ export function CompraForm({ aberto, compra, itensIniciais, fornecedores, insumo
 
   const subtotal = linhas.reduce((s, l) => s + totalLinha(l), 0)
   const total = Math.round((subtotal + lerValor(frete) - lerValor(desconto)) * 100) / 100
+  const formasCompra = montarFormas(total, forma, extras)
   const linhasValidas = linhas.filter((l) => (l.insumo_id || (l.avulso && l.descricao.trim())) && lerValor(l.quantidade) > 0)
 
   const salvar = async () => {
@@ -157,6 +176,9 @@ export function CompraForm({ aberto, compra, itensIniciais, fornecedores, insumo
     if (!linhasValidas.length) return setErro('Inclua pelo menos um item.')
     if (total < 0) return setErro('O desconto é maior que o valor da compra.')
     if (status === 'a_pagar' && !vencimento) return setErro('Informe o vencimento.')
+    if (!empresa) return setErro('Escolha a empresa (CNPJ) da compra.')
+    const ef = validarFormas(total, forma, extras)
+    if (ef) return setErro(ef)
 
     const aumentos = linhasValidas.filter((l) => {
       const ins = insumos.find((i) => i.id === l.insumo_id)
@@ -186,11 +208,13 @@ export function CompraForm({ aberto, compra, itensIniciais, fornecedores, insumo
     const { error } = await supabase.rpc('salvar_compra', {
       p_compra: {
         id: compra?.id ?? null,
+        empresa_id: empresa,
         data,
         fornecedor_id: fornecedorId > 0 ? fornecedorId : null,
         fornecedor_nome: fornecedorId === -1 ? fornecedorNome.trim() : null,
         numero_nota: nota,
         forma_pagamento: forma,
+        pagamentos: extras.length ? formasCompra.pagamentos : null,
         status,
         vencimento: status === 'a_pagar' ? vencimento : null,
         data_pagamento: status === 'paga' ? dataPagamento || data : null,
@@ -207,10 +231,11 @@ export function CompraForm({ aberto, compra, itensIniciais, fornecedores, insumo
         valor_unitario: unitarioDe(l),
         ...(l.nota ?? {}),
       })),
-      p_lancar_caixa: !compra && status === 'paga' && forma === 'Dinheiro' && lancarCaixa,
+      p_lancar_caixa: !compra && status === 'paga' && formasCompra.dinheiro > 0 && lancarCaixa,
     })
     setSalvando(false)
     if (error) return setErro(mensagemErro(error))
+    lembrarEmpresa(empresa)
     avisar(compra ? 'Compra atualizada.' : `Compra de ${brl(total)} lançada. Estoque atualizado.`)
     aoSalvar()
     aoFechar()
@@ -275,6 +300,11 @@ export function CompraForm({ aberto, compra, itensIniciais, fornecedores, insumo
         {erro && <Alerta tom="erro">{erro}</Alerta>}
         {cancelada && <Alerta tom="info">Compra cancelada: não conta no estoque nem nos relatórios. Clique em <strong>Reativar</strong> para voltar a valer.</Alerta>}
 
+        {(emp.varias || !empresa) && (
+          <Campo rotulo="Empresa (CNPJ) da despesa">
+            <SeletorEmpresa valor={empresa} aoMudar={setEmpresa} aria-label="Empresa da compra" />
+          </Campo>
+        )}
         <div className="grade-3">
           <Campo rotulo="Data da compra">
             <Entrada type="date" value={data} onChange={(e) => setData(e.target.value)} />
@@ -374,12 +404,10 @@ export function CompraForm({ aberto, compra, itensIniciais, fornecedores, insumo
             opcoes={[{ valor: 'paga', rotulo: 'Já paga' }, { valor: 'a_pagar', rotulo: 'A pagar (vai para Contas a pagar)' }]} />
         </Campo>
         <div className="grade-3">
-          <Campo rotulo={status === 'a_pagar' ? 'Forma prevista' : 'Forma de pagamento'}>
-            <Selecao value={forma} onChange={(e) => setForma(e.target.value)}>
-              <option value="">—</option>
-              {FORMAS_COMPRA.map((f) => <option key={f}>{f}</option>)}
-            </Selecao>
-          </Campo>
+          <div className="span-2-col-forma">
+            <FormasCompra formas={FORMAS_COMPRA} total={total} forma={forma} aoMudarForma={setForma} extras={extras} aoMudarExtras={setExtras}
+              rotulo={status === 'a_pagar' ? 'Forma prevista' : 'Forma de pagamento'} />
+          </div>
           {status === 'a_pagar' ? (
             <Campo rotulo="Vencimento" dica={fornecedor?.prazo_pagamento_dias ? `Prazo do fornecedor: ${fornecedor.prazo_pagamento_dias} dias` : undefined}>
               <Entrada type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} />
@@ -390,10 +418,10 @@ export function CompraForm({ aberto, compra, itensIniciais, fornecedores, insumo
             </Campo>
           )}
         </div>
-        {!compra && status === 'paga' && forma === 'Dinheiro' && (
+        {!compra && status === 'paga' && formasCompra.dinheiro > 0 && (
           <label className="check destaque-check">
             <input type="checkbox" checked={lancarCaixa} onChange={(e) => setLancarCaixa(e.target.checked)} />
-            <span>O dinheiro saiu da <strong>gaveta do caixa</strong> — registrar como despesa no fechamento de caixa do dia {(dataPagamento || data).split('-').reverse().join('/')}</span>
+            <span>O dinheiro saiu da <strong>gaveta do caixa</strong> — registrar {extras.length ? <strong>{brl(formasCompra.dinheiro)}</strong> : 'como'} despesa no fechamento de caixa do dia {(dataPagamento || data).split('-').reverse().join('/')}</span>
           </label>
         )}
 

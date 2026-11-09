@@ -22,6 +22,10 @@ export interface NotaLida {
   serie: string | null
   data: string // yyyy-mm-dd
   emitente: { documento: string | null; nome: string; fantasia: string | null }
+  /** CNPJ/CPF de quem comprou (para saber em qual empresa lançar) */
+  destinatario?: string | null
+  /** formas de pagamento destacadas na nota (quando há mais de uma) */
+  pagamentos?: { forma: string; valor: number }[]
   itens: ItemNota[]
   valor_produtos: number
   frete: number // inclui seguro, outras despesas e impostos destacados (ST, IPI)
@@ -112,6 +116,10 @@ export function lerXmlNfe(conteudo: string, arquivo: string): NotaLida {
   })).filter((d) => d.data)
 
   const tPag = txt(tag(inf, 'pag'), 'tPag')
+  const dest = tag(inf, 'dest')
+  const pagamentos = tags(tag(inf, 'pag'), 'detPag')
+    .map((d) => ({ forma: FORMA_TPAG[txt(d, 'tPag') ?? ''] ?? 'Outros', valor: r2(n(txt(d, 'vPag'))) }))
+    .filter((p) => p.valor > 0 && p.forma !== 'Sem pagamento')
   const fantasia = txt(emit, 'xFant')
 
   return {
@@ -123,6 +131,8 @@ export function lerXmlNfe(conteudo: string, arquivo: string): NotaLida {
     serie: txt(ide, 'serie'),
     data: dhEmi.slice(0, 10),
     emitente: { documento: txt(emit, 'CNPJ') ?? txt(emit, 'CPF'), nome: txt(emit, 'xNome') ?? 'Fornecedor', fantasia },
+    destinatario: txt(dest, 'CNPJ') ?? txt(dest, 'CPF'),
+    pagamentos: pagamentos.length > 1 ? pagamentos : undefined,
     itens,
     valor_produtos: r2(vProd),
     frete,

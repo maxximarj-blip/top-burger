@@ -275,7 +275,7 @@ def main(origem, destino):
                 "  left join public.formas_pagamento f on f.nome = v.forma\n"
                 "  left join public.maquinas m on m.nome = v.maquina\n"
                 "  where modo.ok = 'on' and v.data not in (select data from ja_existia)\n"
-                "  on conflict (data, (coalesce(turno, '')), numero) do nothing\n"
+                "  on conflict (empresa_id, data, (coalesce(turno, '')), canal_id, numero) do nothing\n"
                 "  returning data\n"
                 "),\n"
                 "por_dia as (select data, count(*) as qtd from gravadas group by data)\n"

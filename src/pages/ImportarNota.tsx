@@ -12,6 +12,8 @@ import {
 import { mensagemErro, supabase } from '../lib/supabase'
 import type { Fornecedor, Insumo, NotaMapeamento, StatusCompra } from '../lib/types'
 import { CATEGORIAS_AVULSAS, FORMAS_COMPRA } from './CompraForm'
+import { FormasCompra, montarFormas, validarFormas, type ParteForma } from '../components/FormasCompra'
+import { empresaPreferida, lembrarEmpresa, SeletorEmpresa, useEmpresas } from '../lib/empresas'
 
 interface Linha {
   item: ItemNota
@@ -50,6 +52,8 @@ interface Rascunho {
   status: StatusCompra
   vencimento: string
   forma: string
+  formasExtras?: ParteForma[]
+  empresa?: number
   frete: string
   desconto: string
   lancarCaixa: boolean
@@ -314,10 +318,22 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
   const [numero, setNumero] = useState(salvo?.numero ?? nota.numero ?? '')
   const [status, setStatus] = useState<StatusCompra>(salvo?.status ?? (aPrazo ? 'a_pagar' : 'paga'))
   const [vencimento, setVencimento] = useState(salvo?.vencimento ?? nota.vencimentos[0]?.data ?? '')
-  const [forma, setForma] = useState(salvo?.forma ?? (nota.forma_pagamento && FORMAS_COMPRA.includes(nota.forma_pagamento) ? nota.forma_pagamento : nota.forma_pagamento ? 'Pix' : aPrazo ? 'Boleto' : ''))
+  const [forma, setForma] = useState(salvo?.forma ?? ((nota.pagamentos?.length ?? 0) > 1 ? formaValidaNota(nota) : null) ?? (nota.forma_pagamento && FORMAS_COMPRA.includes(nota.forma_pagamento) ? nota.forma_pagamento : nota.forma_pagamento ? 'Pix' : aPrazo ? 'Boleto' : ''))
   const [frete, setFrete] = useState(salvo?.frete ?? valorParaCampo(nota.frete))
   const [desconto, setDesconto] = useState(salvo?.desconto ?? valorParaCampo(nota.desconto))
   const [lancarCaixa, setLancarCaixa] = useState(salvo?.lancarCaixa ?? false)
+  // formas destacadas na nota (ex.: Pix + Dinheiro) já vêm divididas
+  const formaValida = (f: string) => (FORMAS_COMPRA.includes(f) ? f : '')
+  const pagNota = [...(nota.pagamentos ?? [])].sort((a, b) => b.valor - a.valor)
+  const [formasExtras, setFormasExtras] = useState<ParteForma[]>(() =>
+    salvo?.formasExtras ?? (pagNota.length > 1 && !salvo ? pagNota.slice(1).map((p) => ({ forma: formaValida(p.forma), valor: valorParaCampo(p.valor) })) : []))
+  // empresa: pelo CNPJ do destinatário da nota; senão a última usada
+  const emp = useEmpresas()
+  const empresaDaNota = emp.ativas.find((e) => soDigitos(e.cnpj) === soDigitos(nota.destinatario ?? ''))?.id ?? 0
+  const [empresa, setEmpresa] = useState<number>(salvo?.empresa ?? 0)
+  useEffect(() => {
+    if (!empresa && emp.ativas.length) setEmpresa(empresaDaNota || empresaPreferida(emp.ativas))
+  }, [empresa, empresaDaNota, emp.ativas])
   const [salvoEm, setSalvoEm] = useState<string | null>(salvo ? 'restaurado' : null)
 
   // ---- salva sozinho cada ajuste (sobrevive a fechar a janela, atualizar a página ou trocar de aparelho)
@@ -326,7 +342,7 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
   useEffect(() => {
     if (primeiraVez.current) { primeiraVez.current = false; return }
     const r: Rascunho = {
-      forn, novoNome, data, numero, status, vencimento, forma, frete, desconto, lancarCaixa,
+      forn, novoNome, data, numero, status, vencimento, forma, frete, desconto, lancarCaixa, formasExtras, empresa,
       linhas: linhas.map(({ item, ...resto }) => (resto.manual ? { ...resto, item } : resto)),
     }
     const t = setTimeout(async () => {
@@ -336,7 +352,7 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
       }
     }, 700)
     return () => clearTimeout(t)
-  }, [forn, novoNome, data, numero, status, vencimento, forma, frete, desconto, lancarCaixa, linhas, registro.id])
+  }, [forn, novoNome, data, numero, status, vencimento, forma, frete, desconto, lancarCaixa, formasExtras, empresa, linhas, registro.id])
   const [duplicada, setDuplicada] = useState<{ id: number; data: string } | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -361,6 +377,7 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
   const total = Math.round((somaItens + lerValor(frete) - lerValor(desconto)) * 100) / 100
   const semDestino = incluidas.filter((l) => l.destino === '').length
   const difNota = Math.round((total - nota.total) * 100) / 100
+  const formasLanc = montarFormas(total, forma, formasExtras)
 
   const lancar = async () => {
     setErro(null)
@@ -370,6 +387,9 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
     if (manualRuim >= 0) return setErro('No item incluído à mão, preencha a descrição, a quantidade e o valor (ou remova o item).')
     if (semDestino) return setErro(`Escolha o insumo (ou "não é insumo") em ${semDestino} ${semDestino === 1 ? 'item' : 'itens'}.`)
     if (forn === 'novo' && !novoNome.trim()) return setErro('Informe o nome do novo fornecedor.')
+    if (!empresa) return setErro('Escolha a empresa (CNPJ) da compra.')
+    const ef = validarFormas(total, forma, formasExtras)
+    if (ef) return setErro(ef)
     if (status === 'a_pagar' && !vencimento) return setErro('Informe o vencimento.')
     if (Math.abs(difNota) >= 0.01) {
       const ok = await confirmar({
@@ -401,6 +421,7 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
       const { data: id, error } = await supabase.rpc('lancar_nota_importada', {
         p_nota_id: registro.id,
         p_compra: {
+          empresa_id: empresa,
           data,
           fornecedor_id: fornecedorId,
           fornecedor_nome: forn === 'avulso' ? novoNome.trim() || nota.emitente.nome : null,
@@ -408,6 +429,7 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
           chave_nfe: nota.chave,
           origem: nota.origem,
           forma_pagamento: forma,
+          pagamentos: formasExtras.length ? formasLanc.pagamentos : null,
           status,
           vencimento: status === 'a_pagar' ? vencimento : null,
           data_pagamento: status === 'paga' ? data : null,
@@ -443,9 +465,10 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
             fator: f,
           }
         }),
-        p_lancar_caixa: status === 'paga' && forma === 'Dinheiro' && lancarCaixa,
+        p_lancar_caixa: status === 'paga' && formasLanc.dinheiro > 0 && lancarCaixa,
       })
       if (error) { lancando.current = false; throw error }
+      lembrarEmpresa(empresa)
       avisar(`Nota ${numero || ''} lançada: ${brl(total)}.`)
       aoLancar(Number(id))
     } catch (e) {
@@ -490,6 +513,15 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
           </button>
         )}
         <div className="conf-campos">
+          {(emp.varias || !empresa) && (
+            <Campo rotulo="Empresa (CNPJ) da compra" dica={
+              empresaDaNota && empresa === empresaDaNota ? <span className="pos">✓ pelo CNPJ do destinatário na nota ({formatarCnpjCpf(nota.destinatario ?? '')})</span>
+                : nota.destinatario && !empresaDaNota ? `Destinatário na nota: ${formatarCnpjCpf(nota.destinatario)} (não é um CNPJ cadastrado) — confira`
+                : 'Escolha em qual CNPJ esta despesa entra'
+            }>
+              <SeletorEmpresa valor={empresa} aoMudar={setEmpresa} aria-label="Empresa da compra" />
+            </Campo>
+          )}
           <div className="grade-2">
             <Campo rotulo="Fornecedor" dica={
               fornPorCnpj ? <span className="pos">✓ reconhecido pelo {soDigitos(nota.emitente.documento).length === 11 ? 'CPF' : 'CNPJ'} {formatarCnpjCpf(nota.emitente.documento)}</span>
@@ -624,22 +656,20 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
         <Campo rotulo="Pagamento">
           <Opcoes nome="Pagamento" valor={status} aoMudar={(v) => setStatus(v as StatusCompra)} opcoes={[{ valor: 'paga', rotulo: 'Já paga' }, { valor: 'a_pagar', rotulo: 'A pagar' }]} />
         </Campo>
-        <Campo rotulo="Forma">
-          <Selecao value={forma} onChange={(e) => setForma(e.target.value)}>
-            <option value="">—</option>
-            {FORMAS_COMPRA.map((f) => <option key={f}>{f}</option>)}
-          </Selecao>
-        </Campo>
+        <div className="span-2-col-forma">
+          <FormasCompra formas={FORMAS_COMPRA} total={total} forma={forma} aoMudarForma={setForma} extras={formasExtras} aoMudarExtras={setFormasExtras}
+            rotulo={status === 'a_pagar' ? 'Forma prevista' : 'Forma'} />
+        </div>
         {status === 'a_pagar' && (
           <Campo rotulo="Vencimento" dica={nota.vencimentos.length > 1 ? `${nota.vencimentos.length} parcelas na nota — usei o 1º vencimento; as parcelas ficam na observação.` : nota.vencimentos.length ? 'Da duplicata da nota' : undefined}>
             <Entrada type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} />
           </Campo>
         )}
       </div>
-      {status === 'paga' && forma === 'Dinheiro' && (
+      {status === 'paga' && formasLanc.dinheiro > 0 && (
         <label className="check destaque-check">
           <input type="checkbox" checked={lancarCaixa} onChange={(e) => setLancarCaixa(e.target.checked)} />
-          <span>O dinheiro saiu da <strong>gaveta do caixa</strong> — registrar a despesa no fechamento de {dataBR(data)}</span>
+          <span>O dinheiro saiu da <strong>gaveta do caixa</strong> — registrar {formasExtras.length ? <strong>{brl(formasLanc.dinheiro)}</strong> : 'a'} despesa no fechamento de {dataBR(data)}</span>
         </label>
       )}
 
@@ -651,6 +681,12 @@ function Conferencia({ registro, previa, quem, fornecedores, insumos, aoDepois, 
       </div>
     </div>
   )
+}
+
+/** Maior forma destacada na nota, se for uma das formas de compra */
+function formaValidaNota(nota: NotaLida): string | null {
+  const p = [...(nota.pagamentos ?? [])].sort((a, b) => b.valor - a.valor)[0]
+  return p && FORMAS_COMPRA.includes(p.forma) ? p.forma : null
 }
 
 function tituloCaso(s: string) {

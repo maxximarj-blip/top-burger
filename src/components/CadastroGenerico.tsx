@@ -63,6 +63,10 @@ interface Props {
   extraFormulario?: (edit: Registro, mudar: (fn: (r: Registro) => Registro) => void) => ReactNode
   /** ajusta os dados antes de gravar (recebe o formulário inteiro) */
   antesDeSalvar?: (dados: Registro, edit: Registro) => Promise<Registro>
+  /** validação a mais (ex.: dígito do CNPJ); devolve a mensagem de erro */
+  validarExtra?: (dados: Registro) => string | null
+  /** chamado depois de gravar ou excluir */
+  aoSalvar?: () => void
 }
 
 const vazioParaNull = (v: unknown) => (v === '' || v === undefined ? null : v)
@@ -315,7 +319,7 @@ export function CadastroGenerico(p: Props) {
   const salvarForm = async () => {
     if (!edit) return
     let dados = montar(edit, camposForm)
-    const v = validar(dados)
+    const v = validar(dados) ?? p.validarExtra?.(dados) ?? null
     if (v) return setErroForm(v)
     setSalvando(true)
     if (p.antesDeSalvar) {
@@ -327,6 +331,7 @@ export function CadastroGenerico(p: Props) {
     setSalvando(false)
     if (error) return setErroForm(mensagemErro(error))
     avisar(edit.id ? `${p.nomeItem} atualizado.` : `${p.nomeItem} cadastrado.`)
+    p.aoSalvar?.()
     if (edit.id) setPendentes((pd) => { const r = { ...pd }; delete r[edit.id!]; return r })
     setEdit(null)
     carregar()
@@ -343,6 +348,7 @@ export function CadastroGenerico(p: Props) {
     const { error } = await supabase.from(p.tabela).delete().eq('id', r.id!)
     if (error) return avisar(mensagemErro(error), 'erro')
     avisar(`${p.nomeItem} excluído.`, 'info')
+    p.aoSalvar?.()
     setEdit(null)
     carregar()
   }

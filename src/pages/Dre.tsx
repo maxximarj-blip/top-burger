@@ -4,12 +4,15 @@ import { Alerta, Botao, Cabecalho, Campo, Cartao, Carregando, Entrada, EntradaVa
 import { brl, dataBR, dataHoraBR, hoje, inicioMes, lerValor, mesExtenso, num } from '../lib/format'
 import { mensagemErro, supabase } from '../lib/supabase'
 import { SeletorMes } from './Compras'
+import { SeletorEmpresa, useEmpresas } from '../lib/empresas'
 
 /* ------------------------------------------------------------------ tipos */
 type GrupoManual = 'impostos' | 'pessoal' | 'ocupacao' | 'administrativas' | 'financeiras' | 'outras'
 
 interface DadosDre {
   mes: string
+  empresa?: { id: number; nome: string; cnpj: string; controla_comandas: boolean } | null
+  repasses?: { origem: string; valor: number }[]
   calculado_em: string
   vendas: {
     produtos: number; entregas: number; descontos: number; comissoes: number; diferencas: number
@@ -18,7 +21,7 @@ interface DadosDre {
   compras: { grupo: 'cmv' | 'embalagens' | 'operacionais'; categoria: string; valor: number }[]
   ajuste_compras: number
   caixa: { entregadores: number; despesas_caixa: number }
-  manuais: Partial<Record<GrupoManual, { valor: number; itens: { id: number; descricao: string; valor: number }[] }>>
+  manuais: Partial<Record<GrupoManual, { valor: number; itens: { id: number; descricao: string; valor: number; empresa?: string }[] }>>
   pendencias: {
     mes_em_andamento: boolean; dias_abertos: string[]; nao_conferidas: number; pendentes: number
     dias_com_venda: number; sem_movimento: boolean
@@ -38,7 +41,7 @@ const GRUPOS: Record<GrupoManual, string> = {
 /* ------------------------------------------------------------------ montagem do DRE */
 type Linha =
   | { tipo: 'grupo'; rotulo: string }
-  | { tipo: 'conta'; rotulo: string; valor: number; nivel?: 1 | 2; dica?: string }
+  | { tipo: 'conta'; rotulo: string; valor: number; nivel?: 1 | 2; dica?: string; opcional?: boolean }
   | { tipo: 'total'; rotulo: string; valor: number; forte?: boolean }
 
 function montar(d: DadosDre) {
@@ -48,7 +51,9 @@ function montar(d: DadosDre) {
   const porGrupo = (g: string) => d.compras.filter((c) => c.grupo === g)
   const soma = (xs: { valor: number }[]) => xs.reduce((s, x) => s + n(x.valor), 0)
 
-  const bruta = n(v.produtos) + n(v.entregas)
+  const repasses = (d.repasses ?? []).map((r) => ({ origem: r.origem, valor: n(r.valor) }))
+  const totalRepasses = repasses.reduce((s, r) => s + r.valor, 0)
+  const bruta = n(v.produtos) + n(v.entregas) + totalRepasses
   const deducoes = n(v.descontos) + n(v.comissoes) + n(v.diferencas)
   const recebido = bruta - deducoes
   const impostos = manual('impostos')
@@ -65,14 +70,15 @@ function montar(d: DadosDre) {
 
   const linhas: Linha[] = [
     { tipo: 'grupo', rotulo: 'Receita bruta' },
-    { tipo: 'conta', rotulo: 'Vendas de produtos', valor: n(v.produtos) },
-    { tipo: 'conta', rotulo: 'Taxas de entrega cobradas', valor: n(v.entregas) },
+    { tipo: 'conta', rotulo: 'Vendas de produtos (comandas)', valor: n(v.produtos), opcional: true },
+    { tipo: 'conta', rotulo: 'Taxas de entrega cobradas', valor: n(v.entregas), opcional: true },
+    ...repasses.map((r): Linha => ({ tipo: 'conta', rotulo: `Repasses · ${r.origem}`, valor: r.valor })),
     { tipo: 'total', rotulo: '= Receita bruta', valor: bruta },
     { tipo: 'grupo', rotulo: '(−) Deduções da receita' },
-    { tipo: 'conta', rotulo: 'Descontos concedidos', valor: -n(v.descontos) },
-    { tipo: 'conta', rotulo: 'Comissões das plataformas (iFood, 99…)', valor: -n(v.comissoes) },
-    { tipo: 'conta', rotulo: 'Diferenças de recebimento (caixa próprio)', valor: -n(v.diferencas), dica: 'Negativo = recebeu a menos; positivo = sobra' },
-    { tipo: 'conta', rotulo: 'Taxas das maquininhas', valor: -n(v.taxas) },
+    { tipo: 'conta', rotulo: 'Descontos concedidos', valor: -n(v.descontos), opcional: true },
+    { tipo: 'conta', rotulo: 'Comissões das plataformas (iFood, 99…)', valor: -n(v.comissoes), opcional: true },
+    { tipo: 'conta', rotulo: 'Diferenças de recebimento (caixa próprio)', valor: -n(v.diferencas), dica: 'Negativo = recebeu a menos; positivo = sobra', opcional: true },
+    { tipo: 'conta', rotulo: 'Taxas das maquininhas', valor: -n(v.taxas), opcional: true },
     { tipo: 'conta', rotulo: 'Impostos sobre vendas', valor: -impostos },
     { tipo: 'total', rotulo: '= Receita líquida', valor: liquida },
     { tipo: 'grupo', rotulo: '(−) Custo das mercadorias vendidas (CMV)' },
@@ -81,7 +87,7 @@ function montar(d: DadosDre) {
     { tipo: 'conta', rotulo: 'Embalagens e descartáveis', valor: -embalagens },
     { tipo: 'total', rotulo: '= Lucro bruto', valor: lucroBruto },
     { tipo: 'grupo', rotulo: '(−) Despesas variáveis' },
-    { tipo: 'conta', rotulo: 'Repasse a entregadores', valor: -variaveis },
+    { tipo: 'conta', rotulo: 'Repasse a entregadores', valor: -variaveis, opcional: true },
     { tipo: 'grupo', rotulo: '(−) Despesas operacionais' },
     ...operacionaisCompras.map((c): Linha => ({ tipo: 'conta', rotulo: `Compras · ${c.categoria}`, valor: -n(c.valor), nivel: 2 })),
     { tipo: 'conta', rotulo: 'Despesas pagas no caixa', valor: -n(d.caixa.despesas_caixa) },
@@ -93,7 +99,7 @@ function montar(d: DadosDre) {
     { tipo: 'conta', rotulo: '(−) Despesas financeiras', valor: -financeiras },
     { tipo: 'total', rotulo: '= Resultado líquido do mês', valor: resultado, forte: true },
   ]
-  return { linhas, bruta, liquida, lucroBruto, cmv: cmv + embalagens, resultado, recebido }
+  return { linhas: linhas.filter((l) => !(l.tipo === 'conta' && l.opcional && Math.abs(l.valor) < 0.005)), bruta, liquida, lucroBruto, cmv: cmv + embalagens, resultado, recebido, totalRepasses }
 }
 
 /** Motivo (em ordem) que impede gerar o DRE definitivo */
@@ -115,6 +121,10 @@ const pctDe = (v: number, base: number) => {
 export function Dre() {
   const { avisar, confirmar } = useAvisos()
   const [mes, setMes] = useState(inicioMes(hoje(), -1))
+  const emp = useEmpresas()
+  const [empresa, setEmpresa] = useState(0)   // 0 = consolidado
+  const [escolheu, setEscolheu] = useState(false)
+  useEffect(() => { if (!escolheu && emp.padrao) { setEmpresa(emp.padrao); setEscolheu(true) } }, [escolheu, emp.padrao])
   const [vivo, setVivo] = useState<DadosDre | null>(null)
   const [gravado, setGravado] = useState<DadosDre | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -124,31 +134,33 @@ export function Dre() {
   const carregar = useCallback(async () => {
     setCarregando(true)
     const [r, g] = await Promise.all([
-      supabase.rpc('dre_mes', { p_mes: mes }),
-      supabase.from('dre_mensal').select('dados').eq('mes', mes).maybeSingle(),
+      supabase.rpc('dre_mes', { p_mes: mes, p_empresa: empresa || null }),
+      empresa ? supabase.from('dre_mensal').select('dados').eq('mes', mes).eq('empresa_id', empresa).maybeSingle() : Promise.resolve({ data: null }),
     ])
     if (r.error) setErro(mensagemErro(r.error))
     else { setErro(null); setVivo(r.data as DadosDre) }
     setGravado((g.data?.dados as DadosDre) ?? null)
     setCarregando(false)
-  }, [mes])
+  }, [mes, empresa])
   useEffect(() => { carregar() }, [carregar])
 
   const d = gravado ?? vivo
   const dre = useMemo(() => (d ? montar(d) : null), [d])
   const pend = vivo?.pendencias
-  const motivo = pend ? bloqueio(pend) : null
+  const consolidado = !empresa
+  const motivo = consolidado ? 'VISÃO CONSOLIDADA — GERE POR CNPJ' : pend ? bloqueio(pend) : null
+  const nomeEmpresa = consolidado ? 'Consolidado (todos os CNPJs)' : `${emp.nome(empresa)} · ${emp.todas.find((e) => e.id === empresa)?.cnpj ?? ''}`
   const definitivo = Boolean(gravado && vivo?.gerado)
 
   const gerar = async () => {
     const ok = await confirmar({
-      titulo: `Gerar o DRE de ${mesExtenso(mes)}?`,
+      titulo: `Gerar o DRE de ${mesExtenso(mes)} — ${emp.nome(empresa)}?`,
       texto: 'O DRE fica gravado como está agora (definitivo). Os lançamentos manuais do mês ficam travados até você desfazer a geração.',
       confirmar: 'Gerar DRE',
     })
     if (!ok) return
     setGerando(true)
-    const { error } = await supabase.rpc('gerar_dre', { p_mes: mes })
+    const { error } = await supabase.rpc('gerar_dre', { p_mes: mes, p_empresa: empresa })
     setGerando(false)
     if (error) return avisar(mensagemErro(error), 'erro')
     avisar(`DRE de ${mesExtenso(mes)} gerado.`)
@@ -158,7 +170,7 @@ export function Dre() {
   const desfazer = async () => {
     const ok = await confirmar({ titulo: 'Desfazer o DRE gerado?', texto: 'Ele volta a ser provisório e recalculado. Fica registrado na auditoria.', confirmar: 'Desfazer', perigo: true })
     if (!ok) return
-    const { error } = await supabase.rpc('desfazer_dre', { p_mes: mes })
+    const { error } = await supabase.rpc('desfazer_dre', { p_mes: mes, p_empresa: empresa })
     if (error) return avisar(mensagemErro(error), 'erro')
     avisar('DRE voltou a ser provisório.', 'info')
     carregar()
@@ -168,9 +180,10 @@ export function Dre() {
     <div className="pagina relatorio">
       <Cabecalho
         titulo="DRE"
-        subtitulo={`Demonstrativo de resultado · ${mesExtenso(mes)}`}
+        subtitulo={`Demonstrativo de resultado · ${mesExtenso(mes)} · ${nomeEmpresa}`}
         acoes={
           <>
+            {emp.varias && <SeletorEmpresa valor={empresa} aoMudar={setEmpresa} todas rotuloTodas="Consolidado (todos os CNPJs)" aria-label="Empresa do DRE" className="entrada nao-imprimir" />}
             <SeletorMes valor={mes} aoMudar={setMes} />
             <Botao onClick={() => window.print()} disabled={!d}>Imprimir / PDF</Botao>
           </>
@@ -184,16 +197,26 @@ export function Dre() {
         <>
           <div className="so-impressao cabecalho-impressao">
             <h2>DRE — {mesExtenso(mes)}</h2>
+            <strong>{nomeEmpresa}</strong>
             <span>{definitivo ? `Gerado em ${dataHoraBR(vivo?.gerado?.gerado_em)}` : 'PROVISÓRIO — mês ainda não fechado/conciliado'}</span>
           </div>
 
-          <StatusDre pend={pend} motivo={motivo} definitivo={definitivo} gerado={vivo?.gerado ?? null}
-            gerando={gerando} aoGerar={gerar} aoDesfazer={desfazer} />
+          {consolidado ? (
+            <div className="dre-status nao-imprimir">
+              <div>
+                <strong>Visão consolidada — soma de todos os CNPJs</strong>
+                <span className="campo-dica">Só para consulta. O DRE oficial é gerado por empresa: escolha o CNPJ no seletor acima.</span>
+              </div>
+            </div>
+          ) : (
+            <StatusDre pend={pend} motivo={motivo} definitivo={definitivo} gerado={vivo?.gerado ?? null}
+              gerando={gerando} aoGerar={gerar} aoDesfazer={desfazer} />
+          )}
 
           <div className="kpis">
             <Kpi destaque rotulo="Resultado do mês" valor={<span className={dre.resultado < 0 ? 'neg' : ''}>{brl(dre.resultado)}</span>}
               detalhe={`margem ${pctDe(dre.resultado, dre.bruta)} da receita bruta`} />
-            <Kpi rotulo="Receita bruta" valor={brl(dre.bruta)} detalhe={`${num(d.vendas.comandas)} comandas`} />
+            <Kpi rotulo="Receita bruta" valor={brl(dre.bruta)} detalhe={[d.vendas.comandas ? `${num(d.vendas.comandas)} comandas` : '', dre.totalRepasses ? `${brl(dre.totalRepasses)} em repasses` : ''].filter(Boolean).join(' · ') || 'sem receitas'} />
             <Kpi rotulo="Receita líquida" valor={brl(dre.liquida)} detalhe={`${pctDe(dre.liquida, dre.bruta)} da bruta`} />
             <Kpi rotulo="CMV + embalagens" valor={brl(dre.cmv)} detalhe={`${pctDe(dre.cmv, dre.liquida)} da receita líquida`} />
           </div>
@@ -221,7 +244,7 @@ export function Dre() {
               </p>
             </Cartao>
 
-            <LancamentosManuais mes={mes} dados={d} travado={definitivo} aoMudar={carregar} />
+            <LancamentosManuais mes={mes} dados={d} travado={definitivo} aoMudar={carregar} empresa={empresa} />
           </div>
         </>
       )}
@@ -264,7 +287,7 @@ function StatusDre({ pend, motivo, definitivo, gerado, gerando, aoGerar, aoDesfa
               {pend.pendentes > 0 && <>, {num(pend.pendentes)} pendente(s)</>} <Link to="/comandas">Comandas →</Link>
             </li>
           )}
-          {!motivo && <li>Todos os dias fechados e todas as comandas conferidas.</li>}
+          {!motivo && <li>{pend.dias_com_venda ? 'Todos os dias fechados e todas as comandas conferidas.' : 'Mês encerrado. Esta empresa não usa comandas: o DRE sai dos repasses e despesas lançados.'}</li>}
         </ul>
       </div>
       <Botao variante="primario" className={motivo ? 'btn-bloqueado' : ''} disabled={!!motivo} carregando={gerando} onClick={aoGerar} title={motivo ?? 'Gravar o DRE definitivo do mês'}>
@@ -274,7 +297,9 @@ function StatusDre({ pend, motivo, definitivo, gerado, gerando, aoGerar, aoDesfa
   )
 }
 
-function LancamentosManuais({ mes, dados, travado, aoMudar }: { mes: string; dados: DadosDre; travado: boolean; aoMudar: () => void }) {
+function LancamentosManuais({ mes, dados, travado, aoMudar, empresa }: { mes: string; dados: DadosDre; travado: boolean; aoMudar: () => void; empresa: number }) {
+  const [empLanc, setEmpLanc] = useState(0)
+  const alvo = empresa || empLanc
   const { avisar, confirmar } = useAvisos()
   const [grupo, setGrupo] = useState<GrupoManual>('pessoal')
   const [descricao, setDescricao] = useState('')
@@ -284,10 +309,11 @@ function LancamentosManuais({ mes, dados, travado, aoMudar }: { mes: string; dad
   const total = grupos.reduce((s, g) => s + Number(dados.manuais[g]?.valor ?? 0), 0)
 
   const adicionar = async () => {
+    if (!alvo) return avisar('Escolha de qual empresa (CNPJ) é a despesa.', 'erro')
     if (!descricao.trim()) return avisar('Descreva a despesa (ex.: Folha de outubro).', 'erro')
     if (!lerValor(valor)) return avisar('Informe o valor.', 'erro')
     setSalvando(true)
-    const { error } = await supabase.from('dre_lancamentos').insert({ mes, grupo, descricao: descricao.trim(), valor: lerValor(valor) })
+    const { error } = await supabase.from('dre_lancamentos').insert({ mes, grupo, descricao: descricao.trim(), valor: lerValor(valor), empresa_id: alvo })
     setSalvando(false)
     if (error) return avisar(mensagemErro(error), 'erro')
     setDescricao(''); setValor('')
@@ -312,7 +338,7 @@ function LancamentosManuais({ mes, dados, travado, aoMudar }: { mes: string; dad
             <tbody>
               {dados.manuais[g]!.itens.map((it) => (
                 <tr key={it.id}>
-                  <td>{it.descricao}</td>
+                  <td>{it.descricao}{!empresa && it.empresa && <small className="sub">{it.empresa}</small>}</td>
                   <td className="n">{brl(it.valor)}</td>
                   <td className="n nao-imprimir">{!travado && <button className="link" onClick={() => remover(it.id, it.descricao)}>remover</button>}</td>
                 </tr>
@@ -325,6 +351,11 @@ function LancamentosManuais({ mes, dados, travado, aoMudar }: { mes: string; dad
       {total > 0 && <p className="dre-manuais-total">Total lançado: <strong>{brl(total)}</strong></p>}
       {!travado && (
         <div className="dre-novo nao-imprimir">
+          {!empresa && (
+            <Campo rotulo="Empresa (CNPJ)">
+              <SeletorEmpresa valor={empLanc} aoMudar={setEmpLanc} aria-label="Empresa da despesa manual" />
+            </Campo>
+          )}
           <Campo rotulo="Grupo">
             <Selecao value={grupo} onChange={(e) => setGrupo(e.target.value as GrupoManual)}>
               {grupos.map((g) => <option key={g} value={g}>{GRUPOS[g]}</option>)}
