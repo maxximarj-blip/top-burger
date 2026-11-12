@@ -599,3 +599,13 @@ select.entrada { width: auto; padding-right: 28px; }
   .dre-manuais .sub-titulo { break-after: avoid; }
   .relatorio .kpis + .grade-dre { margin-top: 6px; }
 }
+.tabela-dre .dre-grupo td.n { text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--texto); }
+.tabela-dre .dre-grupo td.n.neg { color: var(--ketchup, #c8402a); }
+.dre-notas p { margin: 0 0 6px; line-height: 1.5; }
+.dre-conta-cmv { background: var(--superficie-2); border: 1px solid var(--linha); border-radius: 8px; padding: 6px 10px; color: var(--texto); }
+@media print { .dre-notas { break-inside: avoid; } }
+@media print {
+  .dre-manuais .dre-manuais-total { break-before: avoid; }
+  .dre-manuais .tabela:last-of-type { break-after: avoid; }
+  .dre-manuais .tabela tr:last-child { break-after: avoid; }
+}

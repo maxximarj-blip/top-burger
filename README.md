@@ -59,6 +59,7 @@ As regras ficam **no banco** (Row Level Security + gatilhos), não só na tela �
    8. `supabase/migrations/20261103000000_turnos_dre.sql` (turnos manhã/tarde/noite nas comandas e DRE mensal)
    9. `supabase/migrations/20261104000000_pagamento_dividido.sql` (comanda paga com mais de uma forma)
   10. `supabase/migrations/20261109000000_empresas_repasses.sql` (empresas/CNPJs, repasses da franquia, nº de comanda por plataforma, compra paga com mais de uma forma)
+  11. `supabase/migrations/20261112000000_dre_insumos_custo.sql` (DRE: insumos cadastrados entram como custo/CMV)
 3. **Authentication → Sign In / Providers → Email**: **desligue "Allow new users to sign up"**.
    Assim só o admin cria contas. (Pode deixar "Confirm email" ligado.)
 
@@ -122,7 +123,7 @@ npm run dev
 - **Compras com várias formas:** a compra pode ser paga em Pix + dinheiro, dinheiro + cartão etc. A despesa no fechamento de caixa é só a parte em dinheiro. Também vale ao quitar uma conta a pagar.
 - **Pagamento dividido:** a comanda pode ser paga com mais de uma forma (ex.: Pix + dinheiro). Cada forma tem valor, máquina e taxa próprios; a 1ª forma fica com o restante do valor pago. Fechamento (dinheiro da gaveta), painel, recebíveis e relatórios somam cada forma separadamente.
 - **Turnos:** toda comanda nova tem turno (manhã, tarde ou noite; o sistema sugere pelo relógio). O nº da comanda recomeça em cada turno e é único por **dia + turno**; o nº sugerido é o próximo livre do turno e pode ser trocado. Comandas antigas importadas da planilha ficam "sem turno".
-- **DRE:** só o admin vê. O botão "Gerar DRE" fica bloqueado com o motivo: *mês em andamento*, *falta fechamento* (dia com venda sem caixa fechado) ou *falta conciliação* (comanda não conferida ou pendente). CMV estimado pelas compras do mês (categorias de alimentos e bebidas); embalagens à parte; demais compras e despesas do caixa como despesas operacionais.
+- **DRE:** só o admin vê. O botão "Gerar DRE" fica bloqueado com o motivo: *mês em andamento*, *falta fechamento* (dia com venda sem caixa fechado) ou *falta conciliação* (comanda não conferida ou pendente). CMV pelo método das compras (sem estoque: estoque inicial = final): todo item ligado ao cadastro de Insumos é custo, mais alimentos/bebidas comprados avulsos, embalagens e fretes − descontos das notas. Limpeza, manutenção, serviços e utensílios são despesas operacionais. O rodapé do DRE mostra a conta.
 - **Mapa de clientes:** usa OpenStreetMap (grátis, sem chave). A posição é buscada pelo endereço uma vez e fica gravada no cadastro; o CEP preenche rua, bairro e cidade. Sem rua encontrada, o pin vai para o centro do bairro/CEP (aproximado) e pode ser arrastado no cadastro. Clientes sem cidade usam a cidade da loja (botão 🍔 no mapa).
 - **Líquido = valor pago − taxa da maquininha.** O desconto já está dentro do valor pago, então não é subtraído de novo (a planilha antiga descontava duas vezes).
 - **Diferença** = comanda + entrega − desconto − pago. Em 99/iFood é a comissão da plataforma; no canal próprio, qualquer diferença aparece como **divergência** para conferência.

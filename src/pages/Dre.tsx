@@ -18,7 +18,7 @@ interface DadosDre {
     produtos: number; entregas: number; descontos: number; comissoes: number; diferencas: number
     recebido: number; taxas: number; liquido: number; comandas: number
   }
-  compras: { grupo: 'cmv' | 'embalagens' | 'operacionais'; categoria: string; valor: number }[]
+  compras: { grupo: 'cmv' | 'embalagens' | 'operacionais'; categoria: string; valor: number; insumo?: boolean }[]
   ajuste_compras: number
   caixa: { entregadores: number; despesas_caixa: number }
   manuais: Partial<Record<GrupoManual, { valor: number; itens: { id: number; descricao: string; valor: number; empresa?: string }[] }>>
@@ -40,7 +40,7 @@ const GRUPOS: Record<GrupoManual, string> = {
 
 /* ------------------------------------------------------------------ montagem do DRE */
 type Linha =
-  | { tipo: 'grupo'; rotulo: string }
+  | { tipo: 'grupo'; rotulo: string; valor: number }
   | { tipo: 'conta'; rotulo: string; valor: number; nivel?: 1 | 2; dica?: string; opcional?: boolean }
   | { tipo: 'total'; rotulo: string; valor: number; forte?: boolean }
 
@@ -68,27 +68,31 @@ function montar(d: DadosDre) {
   const financeiras = manual('financeiras')
   const resultado = operacional - financeiras
 
+  const custos = cmv + embalagens
+  const deducoesTotal = deducoes + n(v.taxas) + impostos
+  const cmvInsumos = soma(porGrupo('cmv').filter((c) => c.insumo))
+  const cmvAvulsos = soma(porGrupo('cmv').filter((c) => !c.insumo))
+
   const linhas: Linha[] = [
-    { tipo: 'grupo', rotulo: 'Receita bruta' },
+    { tipo: 'grupo', rotulo: 'Receita bruta', valor: bruta },
     { tipo: 'conta', rotulo: 'Vendas de produtos (comandas)', valor: n(v.produtos), opcional: true },
     { tipo: 'conta', rotulo: 'Taxas de entrega cobradas', valor: n(v.entregas), opcional: true },
     ...repasses.map((r): Linha => ({ tipo: 'conta', rotulo: `Repasses · ${r.origem}`, valor: r.valor })),
-    { tipo: 'total', rotulo: '= Receita bruta', valor: bruta },
-    { tipo: 'grupo', rotulo: '(−) Deduções da receita' },
+    { tipo: 'grupo', rotulo: '(−) Deduções da receita', valor: -deducoesTotal },
     { tipo: 'conta', rotulo: 'Descontos concedidos', valor: -n(v.descontos), opcional: true },
     { tipo: 'conta', rotulo: 'Comissões das plataformas (iFood, 99…)', valor: -n(v.comissoes), opcional: true },
     { tipo: 'conta', rotulo: 'Diferenças de recebimento (caixa próprio)', valor: -n(v.diferencas), dica: 'Negativo = recebeu a menos; positivo = sobra', opcional: true },
     { tipo: 'conta', rotulo: 'Taxas das maquininhas', valor: -n(v.taxas), opcional: true },
     { tipo: 'conta', rotulo: 'Impostos sobre vendas', valor: -impostos },
     { tipo: 'total', rotulo: '= Receita líquida', valor: liquida },
-    { tipo: 'grupo', rotulo: '(−) Custo das mercadorias vendidas (CMV)' },
-    ...porGrupo('cmv').map((c): Linha => ({ tipo: 'conta', rotulo: c.categoria, valor: -n(c.valor), nivel: 2 })),
+    { tipo: 'grupo', rotulo: '(−) Custo das mercadorias vendidas (CMV)', valor: -custos },
+    ...porGrupo('cmv').map((c): Linha => ({ tipo: 'conta', rotulo: `Insumos · ${c.categoria}${c.insumo === false ? ' (compra avulsa)' : ''}`, valor: -n(c.valor), nivel: 2 })),
     ...(n(d.ajuste_compras) ? [{ tipo: 'conta', rotulo: 'Fretes − descontos das notas de compra', valor: -n(d.ajuste_compras), nivel: 2 } as Linha] : []),
-    { tipo: 'conta', rotulo: 'Embalagens e descartáveis', valor: -embalagens },
+    { tipo: 'conta', rotulo: 'Embalagens e descartáveis', valor: -embalagens, nivel: 2 },
     { tipo: 'total', rotulo: '= Lucro bruto', valor: lucroBruto },
-    { tipo: 'grupo', rotulo: '(−) Despesas variáveis' },
+    { tipo: 'grupo', rotulo: '(−) Despesas variáveis', valor: -variaveis },
     { tipo: 'conta', rotulo: 'Repasse a entregadores', valor: -variaveis, opcional: true },
-    { tipo: 'grupo', rotulo: '(−) Despesas operacionais' },
+    { tipo: 'grupo', rotulo: '(−) Despesas operacionais', valor: -despesasOp },
     ...operacionaisCompras.map((c): Linha => ({ tipo: 'conta', rotulo: `Compras · ${c.categoria}`, valor: -n(c.valor), nivel: 2 })),
     { tipo: 'conta', rotulo: 'Despesas pagas no caixa', valor: -n(d.caixa.despesas_caixa) },
     { tipo: 'conta', rotulo: 'Pessoal', valor: -manual('pessoal') },
@@ -96,10 +100,12 @@ function montar(d: DadosDre) {
     { tipo: 'conta', rotulo: 'Administrativas', valor: -manual('administrativas') },
     { tipo: 'conta', rotulo: 'Outras despesas', valor: -manual('outras') },
     { tipo: 'total', rotulo: '= Resultado operacional', valor: operacional },
-    { tipo: 'conta', rotulo: '(−) Despesas financeiras', valor: -financeiras },
+    { tipo: 'grupo', rotulo: '(−) Despesas financeiras', valor: -financeiras },
+    { tipo: 'conta', rotulo: 'Juros, tarifas, empréstimos e antecipações', valor: -financeiras },
     { tipo: 'total', rotulo: '= Resultado líquido do mês', valor: resultado, forte: true },
   ]
-  return { linhas: linhas.filter((l) => !(l.tipo === 'conta' && l.opcional && Math.abs(l.valor) < 0.005)), bruta, liquida, lucroBruto, cmv: cmv + embalagens, resultado, recebido, totalRepasses }
+  const cmvExplicado = { insumos: cmvInsumos, avulsos: cmvAvulsos, embalagens, fretes: n(d.ajuste_compras), total: custos }
+  return { linhas: linhas.filter((l) => !(l.tipo === 'conta' && l.opcional && Math.abs(l.valor) < 0.005)), bruta, liquida, lucroBruto, cmv: cmv + embalagens, resultado, recebido, totalRepasses, cmvExplicado }
 }
 
 /** Motivo (em ordem) que impede gerar o DRE definitivo */
@@ -227,7 +233,11 @@ export function Dre() {
                 <thead><tr><th>Conta</th><th className="n">Valor</th><th className="n">% receita</th></tr></thead>
                 <tbody>
                   {dre.linhas.map((l, i) => l.tipo === 'grupo' ? (
-                    <tr key={i} className="dre-grupo"><td colSpan={3}>{l.rotulo}</td></tr>
+                    <tr key={i} className="dre-grupo">
+                      <td>{l.rotulo}</td>
+                      <td className={`n ${l.valor < 0 ? 'neg' : ''}`}>{Math.abs(l.valor) < 0.005 ? '—' : brl(l.valor)}</td>
+                      <td className="n">{Math.abs(l.valor) >= 0.005 ? pctDe(l.valor, dre.bruta) : ''}</td>
+                    </tr>
                   ) : (
                     <tr key={i} className={l.tipo === 'total' ? `dre-total ${l.forte ? 'dre-final' : ''}` : l.nivel === 2 ? 'dre-sub' : ''}>
                       <td>{l.rotulo}{l.tipo === 'conta' && l.dica && <small className="sub">{l.dica}</small>}</td>
@@ -237,11 +247,22 @@ export function Dre() {
                   ))}
                 </tbody>
               </table>
-              <p className="campo-dica dre-notas">
-                Regime de competência pela data da venda e da compra. CMV estimado pelas compras do mês (sem inventário de estoque).
-                Sangrias e suprimentos não entram (são movimentação de dinheiro, não resultado).
-                {!definitivo && ` Calculado em ${dataHoraBR(d.calculado_em)}.`}
-              </p>
+              <div className="campo-dica dre-notas">
+                <p><strong>Como chegamos ao CMV.</strong> Sem controle de estoque, o sistema usa o <b>método das compras</b>: considera que tudo o que
+                  foi comprado no mês foi consumido no mês (estoque inicial = estoque final). Pela fórmula
+                  CMV = estoque inicial + compras − estoque final, fica <b>CMV = compras de custo do mês</b>:</p>
+                <p className="dre-conta-cmv">
+                  insumos cadastrados {brl(dre.cmvExplicado.insumos)}
+                  {dre.cmvExplicado.avulsos ? <> + alimentos e bebidas comprados avulsos {brl(dre.cmvExplicado.avulsos)}</> : null}
+                  {' '}+ embalagens e descartáveis {brl(dre.cmvExplicado.embalagens)}
+                  {dre.cmvExplicado.fretes ? <> {dre.cmvExplicado.fretes > 0 ? '+' : '−'} fretes menos descontos das notas {brl(Math.abs(dre.cmvExplicado.fretes))}</> : null}
+                  {' '}= <b>{brl(dre.cmvExplicado.total)}</b>
+                </p>
+                <p>Não entram no CMV (ficam em despesas operacionais): material de limpeza, manutenção, serviços, utensílios e outras compras que não vão no produto.
+                  Atenção: em mês de compra grande para estoque o CMV sobe, e no mês seguinte cai; para o CMV exato é preciso contar o estoque no início e no fim do mês.</p>
+                <p>Regime de competência pela data da venda e da compra. Sangrias e suprimentos não entram (são movimentação de dinheiro, não resultado).
+                {!definitivo && ` Calculado em ${dataHoraBR(d.calculado_em)}.`}</p>
+              </div>
             </Cartao>
 
             <LancamentosManuais mes={mes} dados={d} travado={definitivo} aoMudar={carregar} empresa={empresa} />
